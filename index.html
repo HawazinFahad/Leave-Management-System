@@ -1,0 +1,1972 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>نظام إدارة الإجازات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --navy:#003462; --blue:#0071B9; --teal:#00A88B;
+    --skye:#B9D8EA; --mist:#C6CDD1;
+    --bg:#F4F7F9; --ink:#1B2430; --muted:#6B7684; --muted-lt:#9AA5B1;
+    --pending:#B7791F; --pending-bg:#FBF3E3;
+    --approved:#00795E; --approved-bg:#E1F5EF;
+    --rejected:#B42318; --rejected-bg:#FBEAE9;
+    --cancelled:#5B6472; --cancelled-bg:#EDEFF1;
+    --radius-card:16px; --radius-ctl:12px;
+    --shadow-soft:0 1px 2px rgba(0,52,98,.06),0 4px 16px rgba(0,52,98,.06);
+    --shadow-lift:0 2px 4px rgba(0,52,98,.08),0 12px 28px rgba(0,52,98,.10);
+  }
+  *{box-sizing:border-box;}
+  html{direction:rtl;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans Arabic', Tahoma, sans-serif;
+    font-feature-settings:'tnum' 1;
+  }
+  button, input, select, textarea{font-family:inherit; font-size:inherit;}
+  *:focus-visible{outline:2px solid var(--blue); outline-offset:2px; border-radius:6px;}
+  a{color:inherit;}
+
+  /* -------- Layout -------- */
+  .header{position:sticky; top:0; z-index:30; background:rgba(255,255,255,.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--mist);}
+  .header-inner{max-width:1120px; margin:0 auto; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;}
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-badge{width:36px; height:36px; border-radius:12px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700;}
+  .brand-title{font-size:14px; font-weight:700; color:var(--navy); margin:0;}
+  .brand-sub{font-size:12px; color:var(--muted-lt); margin:0;}
+  .user-box{display:flex; align-items:center; gap:12px;}
+  .user-name{font-size:13px; font-weight:600; color:var(--navy); margin:0; text-align:left;}
+  .user-role{font-size:11px; color:var(--muted-lt); margin:0; text-align:left;}
+  .tabs-row{max-width:1120px; margin:0 auto; padding:0 20px 10px; display:flex; gap:4px;}
+  .tab-btn{border:none; background:transparent; padding:9px 14px; border-radius:var(--radius-ctl); font-weight:600; font-size:13.5px; color:var(--muted); cursor:pointer;}
+  .tab-btn.active{background:var(--navy); color:#fff;}
+  .tab-btn:not(.active):hover{background:rgba(185,216,234,.35); color:var(--navy);}
+  .main{max-width:1120px; margin:0 auto; padding:22px 20px 60px;}
+
+  /* -------- Buttons -------- */
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:var(--radius-ctl); font-weight:700; font-size:13.5px; cursor:pointer; padding:10px 18px; transition:background .15s;}
+  .btn:disabled{cursor:not-allowed; opacity:.5;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover:not(:disabled){background:#012c53;}
+  .btn-secondary{background:#fff; color:var(--navy); border:1px solid var(--mist);}
+  .btn-secondary:hover:not(:disabled){background:rgba(185,216,234,.2);}
+  .btn-danger{background:var(--rejected); color:#fff;}
+  .btn-danger:hover:not(:disabled){background:#932017;}
+  .btn-ghost{background:transparent; color:var(--navy);}
+  .btn-sm{padding:6px 12px; font-size:12.5px;}
+  .btn-block{width:100%;}
+  .spinner{width:16px; height:16px; border-radius:50%; border:2.5px solid rgba(255,255,255,.4); border-top-color:#fff; animation:spin .7s linear infinite; display:inline-block;}
+  .spinner-dark{border:2.5px solid rgba(0,52,98,.2); border-top-color:var(--navy);}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* -------- Cards -------- */
+  .card{background:#fff; border:1px solid rgba(198,205,209,.6); border-radius:var(--radius-card); padding:18px; box-shadow:var(--shadow-soft);}
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; margin-bottom:20px;}
+  .stat-label{font-size:13px; color:var(--muted); display:block; margin-bottom:4px;}
+  .stat-value{font-size:28px; font-weight:800; color:var(--navy);}
+  .stat-value.teal{color:var(--teal);}
+  .stat-value.blue{color:var(--blue);}
+
+  /* -------- Forms -------- */
+  .field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .field label{font-size:13.5px; font-weight:700; color:var(--navy);}
+  .field .req{color:var(--rejected);}
+  .field input, .field select, .field textarea{
+    width:100%; border:1px solid var(--mist); border-radius:var(--radius-ctl); padding:10px 13px;
+    background:#fff; color:var(--ink);
+  }
+  .field input:disabled{background:#F8FAFB; color:var(--muted-lt);}
+  .field textarea{min-height:88px; resize:vertical;}
+  .field .hint{font-size:12px; color:var(--muted-lt);}
+  .field .err{font-size:12px; font-weight:600; color:var(--rejected);}
+  .form-row-2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  @media (max-width:600px){.form-row-2{grid-template-columns:1fr;}}
+
+  /* -------- Badges -------- */
+  .badge{display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; font-size:11.5px; font-weight:700; white-space:nowrap;}
+  .badge::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .badge.pending{background:var(--pending-bg); color:var(--pending);}
+  .badge.approved{background:var(--approved-bg); color:var(--approved);}
+  .badge.rejected{background:var(--rejected-bg); color:var(--rejected);}
+  .badge.cancelled{background:var(--cancelled-bg); color:var(--cancelled);}
+
+  /* -------- Table -------- */
+  .table-wrap{overflow-x:auto; background:#fff; border:1px solid rgba(198,205,209,.6); border-radius:var(--radius-card); box-shadow:var(--shadow-soft);}
+  table{width:100%; border-collapse:collapse; min-width:760px; font-size:13.5px; text-align:right;}
+  thead tr{background:#F9FAFB; border-bottom:1px solid var(--mist);}
+  th{padding:12px 14px; font-size:12px; color:var(--muted); font-weight:700;}
+  td{padding:12px 14px; border-bottom:1px solid rgba(198,205,209,.35); color:#3A4552; vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(248,250,251,.6);}
+  .link-btn{background:none; border:none; padding:0; color:var(--blue); font-weight:700; cursor:pointer; font-size:inherit; font-family:inherit;}
+  .link-btn:hover{text-decoration:underline;}
+  .muted{color:var(--muted-lt); font-size:12px;}
+
+  /* -------- Modal -------- */
+  .overlay{position:fixed; inset:0; background:rgba(0,52,98,.4); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; z-index:200;}
+  .modal{background:#fff; border-radius:var(--radius-card); box-shadow:var(--shadow-lift); width:100%; max-width:560px; max-height:88vh; display:flex; flex-direction:column;}
+  .modal.lg{max-width:820px;}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid rgba(198,205,209,.6);}
+  .modal-head h2{margin:0; font-size:15px; font-weight:800; color:var(--navy);}
+  .modal-close{background:none; border:none; cursor:pointer; color:var(--muted-lt); font-size:18px; line-height:1; padding:4px;}
+  .modal-body{padding:18px 20px; overflow-y:auto;}
+  .modal-foot{display:flex; justify-content:flex-end; gap:8px; padding:14px 20px; border-top:1px solid rgba(198,205,209,.6);}
+
+  /* -------- Toasts -------- */
+  #toast-host{position:fixed; bottom:18px; left:18px; z-index:400; display:flex; flex-direction:column; gap:8px; max-width:340px;}
+  .toast{padding:12px 16px; border-radius:var(--radius-ctl); font-size:13.5px; font-weight:600; box-shadow:var(--shadow-lift); border:1px solid;}
+  .toast.success{background:var(--approved-bg); color:var(--approved); border-color:rgba(0,121,94,.2);}
+  .toast.error{background:var(--rejected-bg); color:var(--rejected); border-color:rgba(180,35,24,.2);}
+  .toast.info{background:rgba(185,216,234,.4); color:var(--navy); border-color:rgba(0,113,185,.2);}
+
+  /* -------- Misc -------- */
+  .empty{border:1px dashed var(--mist); border-radius:var(--radius-card); padding:48px 20px; text-align:center; color:var(--muted); background:rgba(255,255,255,.6);}
+  .error-box{border:1px solid rgba(180,35,24,.2); background:var(--rejected-bg); border-radius:var(--radius-card); padding:24px; text-align:center; color:var(--rejected); font-weight:700;}
+  .center-loading{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:60px 0; color:var(--muted);}
+  .login-wrap{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
+  .login-card{width:100%; max-width:420px;}
+  .login-logo{width:52px; height:52px; border-radius:16px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; margin:0 auto 10px;}
+  .settings-box{margin-top:14px; border:1px solid var(--mist); border-radius:var(--radius-ctl); padding:12px 14px; font-size:12.5px; color:var(--muted);}
+  .settings-box summary{cursor:pointer; font-weight:700; color:var(--navy);}
+  .demo-box{margin-top:14px; border:1px solid rgba(0,113,185,.2); background:rgba(185,216,234,.2); border-radius:var(--radius-ctl); padding:12px 14px; font-size:12px; color:var(--navy);}
+  .demo-box ul{margin:6px 0 0; padding-inline-start:18px;}
+  .flex-between{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+  .page-title{font-size:18px; font-weight:800; color:var(--navy); margin:0;}
+  .segmented{display:flex; gap:3px; background:#fff; padding:4px; border-radius:var(--radius-ctl); box-shadow:var(--shadow-soft);}
+  .filter-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; background:#fff; border:1px solid rgba(198,205,209,.6); border-radius:var(--radius-card); padding:16px; box-shadow:var(--shadow-soft); margin-bottom:16px;}
+  @media (max-width:800px){.filter-grid{grid-template-columns:1fr 1fr;}}
+  @media (max-width:480px){.filter-grid{grid-template-columns:1fr;}}
+  .pagination-row{display:flex; align-items:center; justify-content:space-between; padding-top:12px; font-size:13px; color:var(--muted);}
+  .info-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; background:#F9FAFB; border-radius:var(--radius-ctl); padding:14px;}
+  @media (max-width:600px){.info-grid{grid-template-columns:1fr 1fr;}}
+  .info-grid .k{font-size:11.5px; color:var(--muted-lt); display:block;}
+  .info-grid .v{font-size:13.5px; font-weight:700; color:var(--navy);}
+  .breakdown-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;}
+  @media (max-width:700px){.breakdown-grid{grid-template-columns:1fr;}}
+  .breakdown-list{list-style:none; margin:0; padding:0; font-size:13.5px;}
+  .breakdown-list li{display:flex; justify-content:space-between; padding:4px 0;}
+  .req-summary-box{background:#F9FAFB; border:1px solid var(--mist); border-radius:var(--radius-ctl); padding:14px; font-size:13px; margin-bottom:14px;}
+  .req-summary-box dl{display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; margin:8px 0 0;}
+  .req-summary-box dt{color:var(--muted-lt);}
+  .req-summary-box dd{margin:0;}
+  .calc-box{border:1px solid var(--skye); background:rgba(185,216,234,.2); border-radius:var(--radius-ctl); padding:12px 14px; font-size:13.5px; margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast-host"></div>
+<script>
+"use strict";
+/* =============================================================
+ * نظام إدارة الإجازات — تطبيق ملف واحد (HTML/JS بدون أدوات بناء)
+ * =============================================================
+ * يعمل مباشرة بفتح الملف في المتصفح. بدون Node.js أو npm أو أي تثبيت.
+ *
+ * الاتصال بالخادم: يقرأ رابط Google Apps Script من الإعدادات المحفوظة
+ * محلياً في هذا المتصفح (localStorage). إن لم يُعرَّف رابط، يعمل التطبيق
+ * تلقائياً على بيانات تجريبية داخلية (نفس منطق الصلاحيات والحساب تماماً)
+ * حتى تتمكن من تجربته فوراً دون أي إعداد.
+ * ============================================================= */
+
+// ------------------------------- الإعدادات -------------------------------
+
+var SETTINGS_KEY = "leave_app_settings_v1";
+var SESSION_KEY = "leave_app_session_v1";
+
+function loadSettings() {
+  try {
+    var raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : { appsScriptUrl: "", useMock: true };
+  } catch (e) {
+    return { appsScriptUrl: "", useMock: true };
+  }
+}
+function saveSettings(settings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    /* تجاهل بصمت */
+  }
+}
+
+var SETTINGS = loadSettings();
+
+function isUsingMock() {
+  return SETTINGS.useMock || !SETTINGS.appsScriptUrl;
+}
+
+// -------------------------- إدارة الجلسة (بدون كلمة مرور) --------------------------
+
+function saveSession(session) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch (e) {
+    /* تجاهل بصمت */
+  }
+}
+function loadSession() {
+  try {
+    var raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function clearSession() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {
+    /* تجاهل بصمت */
+  }
+}
+
+// ================================================================
+// دوال التاريخ المركزية — مستقلة عن توقيت الجهاز (خوارزمية JDN)
+// المنطقة الزمنية المرجعية: Asia/Riyadh (UTC+03:00 بدون توقيت صيفي)
+// نفس الخوارزمية المستخدمة يجب تكرارها في Apps Script الخاص بالخادم
+// حتى يتطابق حساب الواجهة مع إعادة تحقق الخادم تماماً.
+// ================================================================
+
+function parseISODate(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso).trim());
+  if (!m) throw new Error("تاريخ غير صالح: " + iso);
+  var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) throw new Error("تاريخ غير صالح: " + iso);
+  return { y: y, m: mo, d: d };
+}
+
+function toISODate(ymd) {
+  function pad(n, len) { var s = String(n); while (s.length < len) s = "0" + s; return s; }
+  return pad(ymd.y, 4) + "-" + pad(ymd.m, 2) + "-" + pad(ymd.d, 2);
+}
+
+function toSerial(ymd) {
+  var a = Math.floor((14 - ymd.m) / 12);
+  var y2 = ymd.y + 4800 - a;
+  var m2 = ymd.m + 12 * a - 3;
+  return ymd.d + Math.floor((153 * m2 + 2) / 5) + 365 * y2 + Math.floor(y2 / 4) - Math.floor(y2 / 100) + Math.floor(y2 / 400) - 32045;
+}
+
+function fromSerial(serial) {
+  var a = serial + 32044;
+  var b = Math.floor((4 * a + 3) / 146097);
+  var c = a - Math.floor((146097 * b) / 4);
+  a = c;
+  var d2 = Math.floor((4 * a + 3) / 1461);
+  var e = a - Math.floor((1461 * d2) / 4);
+  var m2 = Math.floor((5 * e + 2) / 153);
+  var d = e - Math.floor((153 * m2 + 2) / 5) + 1;
+  var m = m2 + 3 - 12 * Math.floor(m2 / 10);
+  var y = 100 * b + d2 - 4800 + Math.floor(m2 / 10);
+  return toISODate({ y: y, m: m, d: d });
+}
+
+function addDays(iso, days) {
+  return fromSerial(toSerial(parseISODate(iso)) + days);
+}
+
+function diffCalendarDays(startIso, endIso) {
+  return toSerial(parseISODate(endIso)) - toSerial(parseISODate(startIso));
+}
+
+function compareDates(a, b) {
+  var sa = toSerial(parseISODate(a)), sb = toSerial(parseISODate(b));
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+function inclusiveCalendarDays(startIso, endIso) {
+  return diffCalendarDays(startIso, endIso) + 1;
+}
+
+function dayOfWeek(ymd) {
+  var serial = toSerial(ymd);
+  var diff = ((serial - 2451545) % 7 + 7) % 7; // 0 = سبت
+  return (diff + 6) % 7; // 0 = الأحد ... 6 = السبت
+}
+
+var WEEKEND_DAYS = { 5: true, 6: true }; // الجمعة والسبت
+
+function isWeekend(iso) {
+  return !!WEEKEND_DAYS[dayOfWeek(parseISODate(iso))];
+}
+
+function isLeapYear(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+
+function todayInRiyadh() {
+  var now = new Date();
+  var utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  var riyadh = new Date(utcMs + 3 * 3600000);
+  return toISODate({ y: riyadh.getFullYear(), m: riyadh.getMonth() + 1, d: riyadh.getDate() });
+}
+
+function nowInRiyadhISO() {
+  var now = new Date();
+  var utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  var r = new Date(utcMs + 3 * 3600000);
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  return r.getFullYear() + "-" + pad(r.getMonth() + 1) + "-" + pad(r.getDate()) +
+    "T" + pad(r.getHours()) + ":" + pad(r.getMinutes()) + ":" + pad(r.getSeconds()) + "+03:00";
+}
+
+var ARABIC_MONTHS = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+var ARABIC_WEEKDAYS = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+
+function formatArabicDate(iso, withWeekday) {
+  var ymd = parseISODate(iso);
+  var monthName = ARABIC_MONTHS[ymd.m - 1];
+  if (withWeekday === false) return ymd.d + " " + monthName + " " + ymd.y;
+  var weekday = ARABIC_WEEKDAYS[dayOfWeek(ymd)];
+  return weekday + "، " + ymd.d + " " + monthName + " " + ymd.y;
+}
+
+function formatArabicRange(startIso, endIso) {
+  return formatArabicDate(startIso, false) + " — " + formatArabicDate(endIso, false);
+}
+
+// ================================================================
+// سياسة أنواع الإجازات — قابلة للتهيئة من مكان واحد
+// ================================================================
+
+var LEAVE_POLICY = {
+  paternity: { label: "إجازة الأبوة / ولادة مولود", category: "fixed_calendar", fixedDays: 3, deducts: false },
+  marriage: { label: "إجازة الزواج", category: "fixed_calendar", fixedDays: 5, deducts: false },
+  maternity: { label: "إجازة الأمومة / الوضع", category: "fixed_calendar", fixedDays: 84, deducts: false },
+  death_spouse_asc_desc: { label: "وفاة الزوجة / الأصول / الفروع", category: "fixed_calendar", fixedDays: 5, deducts: false },
+  death_sibling: { label: "وفاة الأخ أو الأخت", category: "fixed_calendar", fixedDays: 3, deducts: false },
+  death_husband_muslim: { label: "وفاة زوج العاملة المسلمة", category: "fixed_calendar", fixedDays: 130, deducts: false },
+  death_husband_non_muslim: { label: "وفاة زوج العاملة غير المسلمة", category: "fixed_calendar", fixedDays: 15, deducts: false },
+  annual: { label: "الإجازة السنوية", category: "workdays_excl_weekend_holiday", deducts: true },
+  // هل تُخصم الإجازة المرضية من الرصيد؟ NEEDS_CONFIRMATION — راجع قسم الافتراضات في الصفحة
+  sick: { label: "الإجازة المرضية", category: "workdays_excl_weekend_holiday", deducts: false },
+  // سياسة أيام هذه الأنواع غير موثقة رسمياً؛ قيمة مؤقتة: تقويمي شامل بسيط،
+  // بدون خلطها بقاعدة أيام العمل الخاصة بالسنوية/المرضية — NEEDS_CONFIRMATION
+  exam: { label: "إجازة الامتحانات", category: "flexible_calendar_inclusive", deducts: false },
+  hajj: { label: "إجازة الحج", category: "flexible_calendar_inclusive", deducts: false },
+  unpaid: { label: "إجازة بدون أجر (استثنائية)", category: "flexible_calendar_inclusive", deducts: false }
+};
+
+var EXCEPTIONAL_GM_DIRECT_TYPES = ["unpaid"];
+
+var LEAVE_TYPE_OPTIONS = Object.keys(LEAVE_POLICY).map(function (k) {
+  return { value: k, label: LEAVE_POLICY[k].label };
+});
+
+function isFixedLeaveType(type) {
+  return LEAVE_POLICY[type].category === "fixed_calendar";
+}
+
+// ================================================================
+// حساب مدة الإجازة
+// ================================================================
+
+function countWorkdays(startIso, endIso, holidaySet) {
+  if (compareDates(startIso, endIso) > 0) return 0;
+  var count = 0, cursor = startIso, guard = 0;
+  while (compareDates(cursor, endIso) <= 0 && guard < 5000) {
+    if (!isWeekend(cursor) && !holidaySet[cursor]) count++;
+    cursor = addDays(cursor, 1);
+    guard++;
+  }
+  return count;
+}
+
+/** يعيد { startDate, endDate, totalDays, endDateReadOnly } أو { error } */
+function calculateLeave(params) {
+  var leaveType = params.leaveType, startDate = params.startDate, holidaySet = params.holidaySet || {};
+  var policy = LEAVE_POLICY[leaveType];
+
+  try { parseISODate(startDate); } catch (e) { return { error: "تاريخ البداية غير صالح." }; }
+
+  if (policy.category === "fixed_calendar") {
+    var endDate = addDays(startDate, policy.fixedDays - 1);
+    return { startDate: startDate, endDate: endDate, totalDays: policy.fixedDays, endDateReadOnly: true };
+  }
+
+  var end = params.endDate;
+  if (!end) return { error: "الرجاء تحديد تاريخ النهاية." };
+  try { parseISODate(end); } catch (e) { return { error: "تاريخ النهاية غير صالح." }; }
+  if (compareDates(end, startDate) < 0) return { error: "تاريخ النهاية يجب أن يكون مساوياً لتاريخ البداية أو بعده." };
+
+  if (policy.category === "workdays_excl_weekend_holiday") {
+    var totalDays = countWorkdays(startDate, end, holidaySet);
+    if (totalDays <= 0) {
+      return { error: "المدة المحددة لا تحتوي على أي يوم عمل فعلي (تقع بالكامل ضمن عطلة نهاية الأسبوع أو إجازة رسمية)." };
+    }
+    return { startDate: startDate, endDate: end, totalDays: totalDays, endDateReadOnly: false };
+  }
+
+  return { startDate: startDate, endDate: end, totalDays: inclusiveCalendarDays(startDate, end), endDateReadOnly: false };
+}
+
+// ================================================================
+// مسار الاعتماد الإلزامي
+// ================================================================
+
+function determineInitialStage(requesterRole, leaveType) {
+  var isExceptional = EXCEPTIONAL_GM_DIRECT_TYPES.indexOf(leaveType) !== -1;
+  var isExecutive = requesterRole === "pm" || requesterRole === "cm";
+  if (isExceptional || isExecutive) return "gm";
+  return "pm";
+}
+
+function determineNextStage(currentStage) {
+  if (currentStage === "pm") return "cm";
+  if (currentStage === "cm") return "done";
+  if (currentStage === "gm") return "done";
+  return "done";
+}
+
+function canRoleActOnStage(role, stage) {
+  if (stage === "done") return false;
+  if (role === "co" || role === "employee") return false;
+  return role === stage;
+}
+
+function stageToStatus(stage) {
+  if (stage === "pm") return "pending_pm";
+  if (stage === "cm") return "pending_cm";
+  if (stage === "gm") return "pending_gm";
+  return "approved";
+}
+
+function statusToStage(status) {
+  if (status === "pending_pm") return "pm";
+  if (status === "pending_cm") return "cm";
+  if (status === "pending_gm") return "gm";
+  return "done";
+}
+
+var STAGE_LABELS = {
+  pm: "بانتظار اعتماد مدير المشروع",
+  cm: "بانتظار الاعتماد النهائي من مدير العقد",
+  gm: "بانتظار اعتماد المدير العام",
+  done: "مكتمل"
+};
+
+function isFinalApprovalStage(stage) {
+  return stage === "cm" || stage === "gm";
+}
+
+// ================================================================
+// حالات الطلب — طبقة تطبيع وعرض واحدة
+// ================================================================
+
+var STATUS_LABELS = {
+  pending_pm: "قيد المراجعة (مدير المشروع)",
+  pending_cm: "قيد المراجعة (مدير العقد)",
+  pending_gm: "قيد المراجعة (المدير العام)",
+  approved: "مقبول",
+  rejected: "مرفوض",
+  cancelled: "ملغي"
+};
+
+var STATUS_BADGE_CLASS = {
+  pending_pm: "pending", pending_cm: "pending", pending_gm: "pending",
+  approved: "approved", rejected: "rejected", cancelled: "cancelled"
+};
+
+var ALL_STATUSES = ["pending_pm", "pending_cm", "pending_gm", "approved", "rejected", "cancelled"];
+
+var ROLE_LABELS = { employee: "موظف", pm: "مدير مشروع", cm: "مدير عقد", co: "مسؤول عقود", gm: "المدير العام" };
+
+// ================================================================
+// بيانات تجريبية (Mock) — تُستخدم فقط عند عدم ضبط رابط Apps Script حقيقي
+// ================================================================
+
+var MOCK_EMPLOYEES = [
+  { nationalId:"1010101010", password:"1234", name:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", jobTitle:"أخصائي عمليات", initialBalance:30, currentBalance:21, email:"salem.harbi@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"الرياض" },
+  { nationalId:"2020202020", password:"1234", name:"منى القحطاني", company:"الشركة التجريبية", department:"الموارد البشرية", jobTitle:"منسقة موارد بشرية", initialBalance:30, currentBalance:30, email:"mona.q@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"جدة" },
+  { nationalId:"3030303030", password:"1234", name:"خالد الدوسري", company:"الشركة التجريبية", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:24, email:"khaled.dosari@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"pm", city:"الرياض" },
+  { nationalId:"4040404040", password:"1234", name:"فيصل العنزي", company:"الشركة التجريبية", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"faisal.anzi@example.com", gmEmail:"gm@example.com", role:"cm", city:"الرياض" },
+  { nationalId:"5050505050", password:"1234", name:"عبدالله المطيري", company:"الشركة التجريبية", department:"الشؤون القانونية والعقود", jobTitle:"مسؤول عقود", initialBalance:30, currentBalance:30, email:"abdullah.mutairi@example.com", role:"co", city:"الرياض" },
+  { nationalId:"6060606060", password:"1234", name:"نورة الشمري", company:"الشركة التجريبية", department:"الإدارة التنفيذية", jobTitle:"المدير العام", initialBalance:30, currentBalance:30, email:"noura.shamri@example.com", role:"gm", city:"الرياض" }
+];
+
+var MOCK_HOLIDAYS = [
+  { date:"2026-02-22", name:"اليوم الوطني السعودي (تجريبي)" },
+  { date:"2026-04-20", name:"عيد الفطر - اليوم الأول (تجريبي)" },
+  { date:"2026-04-21", name:"عيد الفطر - اليوم الثاني (تجريبي)" },
+  { date:"2026-06-26", name:"عيد الأضحى - اليوم الأول (تجريبي)" }
+];
+
+var MOCK_REQUESTS = [
+  { requestId:"REQ-0001", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"annual", startDate:"2026-08-02", endDate:"2026-08-06", totalDays:4, substituteName:"منى القحطاني", reason:"إجازة سنوية مجدولة", status:"approved", pmComment:"موافق", cmComment:"معتمد", timestamp:"2026-07-20T09:15:00+03:00", finalApprovalDate:"2026-07-22T11:00:00+03:00" },
+  { requestId:"REQ-0002", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"sick", startDate:"2026-09-10", endDate:"2026-09-11", totalDays:2, substituteName:"-", reason:"وعكة صحية", status:"pending_pm", pmComment:"", cmComment:"", timestamp:"2026-09-09T08:00:00+03:00", finalApprovalDate:"" }
+];
+
+// نسخ عميقة قابلة للتعديل أثناء الجلسة (تُهيَّأ عند كل تحميل صفحة من جديد)
+var mockDb = {
+  employees: JSON.parse(JSON.stringify(MOCK_EMPLOYEES)),
+  requests: JSON.parse(JSON.stringify(MOCK_REQUESTS)),
+  holidays: JSON.parse(JSON.stringify(MOCK_HOLIDAYS)),
+  sessions: {}, // token -> nationalId
+  seq: MOCK_REQUESTS.length + 1
+};
+
+function mockDelay(value, ms) {
+  return new Promise(function (resolve) { setTimeout(function () { resolve(value); }, ms || 450); });
+}
+
+function mockPublicEmployee(e) {
+  return { nationalId: e.nationalId, name: e.name, company: e.company, department: e.department, jobTitle: e.jobTitle, initialBalance: e.initialBalance, currentBalance: e.currentBalance, email: e.email, role: e.role, city: e.city };
+}
+
+function ApiClientError(message, code) {
+  this.message = message;
+  this.code = code;
+  this.name = "ApiClientError";
+}
+ApiClientError.prototype = Object.create(Error.prototype);
+
+function mockRequireSession(token) {
+  var nationalId = token && mockDb.sessions[token];
+  if (!nationalId) throw new ApiClientError("انتهت صلاحية الجلسة. سجّل الدخول من جديد.", "SESSION_EXPIRED");
+  var emp = mockDb.employees.filter(function (e) { return e.nationalId === nationalId; })[0];
+  if (!emp) throw new ApiClientError("انتهت صلاحية الجلسة. سجّل الدخول من جديد.", "SESSION_EXPIRED");
+  return emp;
+}
+
+function mockHolidaySet() {
+  var set = {};
+  mockDb.holidays.forEach(function (h) { set[h.date] = true; });
+  return set;
+}
+
+var mockApi = {
+  login: function (payload) {
+    var emp = mockDb.employees.filter(function (e) { return e.nationalId === payload.nationalId; })[0];
+    if (!emp || emp.password !== payload.password) {
+      return mockDelay(null, 350).then(function () {
+        throw new ApiClientError("رقم الهوية أو كلمة المرور غير صحيحة.", "INVALID_CREDENTIALS");
+      });
+    }
+    var token = "session-" + emp.nationalId + "-" + Date.now();
+    mockDb.sessions[token] = emp.nationalId;
+    var result = { employee: mockPublicEmployee(emp), sessionToken: token };
+    if (emp.mustChangePassword) result.mustChangePassword = true;
+    return mockDelay(result);
+  },
+
+  getEmployees: function (token, city) {
+    var actor = mockRequireSession(token);
+    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) {
+      throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    }
+    var list = mockDb.employees;
+    if (city) list = list.filter(function (e) { return e.city === city; });
+    return mockDelay(list.map(mockPublicEmployee));
+  },
+
+  submitLeave: function (token, payload) {
+    var actor = mockRequireSession(token);
+    if (actor.nationalId !== payload.nationalId) {
+      throw new ApiClientError("لا يمكن تقديم طلب نيابة عن موظف آخر.", "FORBIDDEN");
+    }
+    var calc = calculateLeave({ leaveType: payload.leaveType, startDate: payload.startDate, endDate: payload.endDate, holidaySet: mockHolidaySet() });
+    if (calc.error) throw new ApiClientError(calc.error, "VALIDATION_ERROR");
+
+    var policy = LEAVE_POLICY[payload.leaveType];
+    if (policy.deducts && (actor.currentBalance || 0) < calc.totalDays) {
+      throw new ApiClientError("الرصيد الحالي لا يكفي لهذه المدة.", "INSUFFICIENT_BALANCE");
+    }
+
+    var stage = determineInitialStage(actor.role, payload.leaveType);
+    var record = {
+      requestId: "REQ-" + String(mockDb.seq++).padStart(4, "0"),
+      nationalId: actor.nationalId, employeeName: actor.name, company: actor.company,
+      department: actor.department, city: actor.city, leaveType: payload.leaveType,
+      startDate: calc.startDate, endDate: calc.endDate, totalDays: calc.totalDays,
+      substituteName: payload.substituteName, reason: payload.reason,
+      status: stageToStatus(stage), pmComment: "", cmComment: "",
+      timestamp: nowInRiyadhISO(), finalApprovalDate: ""
+    };
+    mockDb.requests.unshift(record);
+    return mockDelay(record, 600);
+  },
+
+  getMyRequests: function (token) {
+    var actor = mockRequireSession(token);
+    return mockDelay(mockDb.requests.filter(function (r) { return r.nationalId === actor.nationalId; }));
+  },
+
+  getRequests: function (token) {
+    var actor = mockRequireSession(token);
+    if (actor.role === "employee") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (actor.role === "co" || actor.role === "gm") return mockDelay(mockDb.requests);
+    return mockDelay(mockDb.requests.filter(function (r) {
+      return statusToStage(r.status) === actor.role && r.company === actor.company;
+    }));
+  },
+
+  getEmployeeHistory: function (token, empNationalId) {
+    var actor = mockRequireSession(token);
+    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    var emp = mockDb.employees.filter(function (e) { return e.nationalId === empNationalId; })[0];
+    if (!emp) throw new ApiClientError("الموظف غير موجود.", "NOT_FOUND");
+    return mockDelay({ employee: mockPublicEmployee(emp), requests: mockDb.requests.filter(function (r) { return r.nationalId === empNationalId; }) });
+  },
+
+  getAllRequestsHistory: function (token, filters) {
+    var actor = mockRequireSession(token);
+    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    var list = mockDb.requests.slice();
+    if (filters.query) {
+      var q = filters.query.trim().toLowerCase();
+      list = list.filter(function (r) { return r.employeeName.toLowerCase().indexOf(q) !== -1 || r.nationalId.indexOf(q) !== -1 || r.requestId.toLowerCase().indexOf(q) !== -1; });
+    }
+    if (filters.city) list = list.filter(function (r) { return r.city === filters.city; });
+    if (filters.leaveType && filters.leaveType !== "all") list = list.filter(function (r) { return r.leaveType === filters.leaveType; });
+    if (filters.status && filters.status !== "all") list = list.filter(function (r) { return r.status === filters.status; });
+    var page = filters.page || 1, pageSize = filters.pageSize || 20;
+    var total = list.length, start = (page - 1) * pageSize;
+    return mockDelay({ items: list.slice(start, start + pageSize), total: total, page: page, pageSize: pageSize });
+  },
+
+  updateStatus: function (token, payload) {
+    var actor = mockRequireSession(token);
+    if (actor.role === "co") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    var idx = -1;
+    for (var i = 0; i < mockDb.requests.length; i++) { if (mockDb.requests[i].requestId === payload.requestId) { idx = i; break; } }
+    if (idx === -1) throw new ApiClientError("الطلب غير موجود.", "NOT_FOUND");
+    var req = mockDb.requests[idx];
+
+    if (req.status === "approved" || req.status === "rejected" || req.status === "cancelled") {
+      throw new ApiClientError("لا يمكن تعديل طلب تم البت فيه مسبقاً.", "ALREADY_PROCESSED");
+    }
+    var currentStage = statusToStage(req.status);
+    if (!canRoleActOnStage(actor.role, currentStage)) {
+      throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء على هذا الطلب في مرحلته الحالية.", "FORBIDDEN");
+    }
+
+    if (payload.status === "rejected") {
+      if (!payload.comment || !payload.comment.trim()) throw new ApiClientError("التعليق إلزامي عند الرفض.", "VALIDATION_ERROR");
+      req.status = "rejected";
+      if (actor.role === "pm") req.pmComment = payload.comment; else req.cmComment = payload.comment;
+      return mockDelay(req, 500);
+    }
+
+    var nextStage = determineNextStage(currentStage);
+    var willFinalize = isFinalApprovalStage(currentStage);
+    if (willFinalize) {
+      var policy = LEAVE_POLICY[req.leaveType];
+      var empIdx = -1;
+      for (var j = 0; j < mockDb.employees.length; j++) { if (mockDb.employees[j].nationalId === req.nationalId) { empIdx = j; break; } }
+      if (policy.deducts && empIdx !== -1) {
+        var emp = mockDb.employees[empIdx];
+        if ((emp.currentBalance || 0) < req.totalDays) throw new ApiClientError("رصيد الموظف الحالي لا يكفي لإتمام الاعتماد.", "INSUFFICIENT_BALANCE");
+        emp.currentBalance = (emp.currentBalance || 0) - req.totalDays;
+      }
+    }
+    req.status = stageToStatus(nextStage);
+    if (actor.role === "pm") req.pmComment = payload.comment || req.pmComment; else req.cmComment = payload.comment || req.cmComment;
+    if (willFinalize) req.finalApprovalDate = nowInRiyadhISO();
+    return mockDelay(req, 500);
+  },
+
+  getHolidays: function () {
+    return mockDelay(mockDb.holidays);
+  },
+
+  changePassword: function (token, payload) {
+    var actor = mockRequireSession(token);
+    var current = String(payload.currentPassword || "");
+    var next = String(payload.newPassword || "");
+    if (next.length < 6) throw new ApiClientError("كلمة المرور الجديدة يجب أن تتكون من 6 أحرف على الأقل.", "VALIDATION_ERROR");
+    if (actor.password !== current) throw new ApiClientError("كلمة المرور الحالية غير صحيحة.", "INVALID_CREDENTIALS");
+    actor.password = next;
+    actor.mustChangePassword = false;
+    return mockDelay(null, 400);
+  },
+
+  generateLeaveCertificate: function () {
+    return Promise.reject(new ApiClientError("توليد تقرير PDF متاح فقط عند الاتصال بخادم Apps Script الحقيقي (غير متاح في وضع البيانات التجريبية).", "MOCK_UNSUPPORTED"));
+  }
+};
+
+// ================================================================
+// طبقة API الموحدة — كل الطلبات تمر من هنا فقط
+// ================================================================
+
+var REQUEST_TIMEOUT_MS = 20000;
+
+function currentSessionToken() {
+  var s = loadSession();
+  return s && s.sessionToken;
+}
+
+function normalizeEnvelope(raw) {
+  if (raw === null || raw === undefined) return { success:false, data:null, message:"استجابة فارغة من الخادم.", errorCode:"EMPTY_RESPONSE" };
+  if (typeof raw !== "object") return { success:false, data:null, message:"استجابة غير متوقعة من الخادم.", errorCode:"MALFORMED_RESPONSE" };
+  if ("success" in raw) {
+    return { success: !!raw.success, data: raw.data != null ? raw.data : null, message: typeof raw.message === "string" ? raw.message : "", errorCode: typeof raw.errorCode === "string" ? raw.errorCode : null };
+  }
+  if ("ok" in raw) {
+    return { success: !!raw.ok, data: raw.result != null ? raw.result : (raw.data != null ? raw.data : null), message: typeof raw.message === "string" ? raw.message : (typeof raw.error === "string" ? raw.error : ""), errorCode: typeof raw.errorCode === "string" ? raw.errorCode : null };
+  }
+  if ("error" in raw) {
+    return { success:false, data:null, message: typeof raw.error === "string" ? raw.error : "حدث خطأ غير متوقع.", errorCode: typeof raw.errorCode === "string" ? raw.errorCode : "UNKNOWN_ERROR" };
+  }
+  return { success:true, data: raw, message:"", errorCode:null };
+}
+
+function callAppsScript(action, payload) {
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS);
+  var body = Object.assign({ action: action, sessionToken: currentSessionToken() }, payload || {});
+
+  return fetch(SETTINGS.appsScriptUrl, {
+    method: "POST", mode: "cors",
+    // ملاحظة: نستخدم text/plain عمداً بدل application/json لتفادي CORS
+    // preflight (OPTIONS) الذي لا تتعامل معه Apps Script Web Apps بشكل موثوق
+    // دائماً. الجسم يبقى نص JSON صالحاً تماماً ويُقرأ في Code.gs كما هو.
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(body),
+    signal: controller.signal
+  }).catch(function (err) {
+    clearTimeout(timeoutId);
+    if (err && err.name === "AbortError") throw new ApiClientError("انتهت مهلة الاتصال بالخادم. حاول مرة أخرى.", "TIMEOUT");
+    throw new ApiClientError("تعذر الاتصال بالخادم. تحقق من الاتصال وحاول مرة أخرى.", "NETWORK_ERROR");
+  }).then(function (response) {
+    clearTimeout(timeoutId);
+    if (!response.ok) throw new ApiClientError("تعذر إتمام الطلب (رمز الخطأ " + response.status + "). حاول مرة أخرى لاحقاً.", "HTTP_ERROR");
+    return response.text();
+  }).then(function (text) {
+    if (!text) throw new ApiClientError("استجابة فارغة من الخادم.", "EMPTY_RESPONSE");
+    var json;
+    try { json = JSON.parse(text); } catch (e) { throw new ApiClientError("تعذّرت قراءة استجابة الخادم.", "MALFORMED_RESPONSE"); }
+    var envelope = normalizeEnvelope(json);
+    if (!envelope.success) {
+      if (envelope.errorCode === "SESSION_EXPIRED" || envelope.errorCode === "UNAUTHENTICATED") {
+        clearSession();
+        onSessionExpired && onSessionExpired();
+      }
+      throw new ApiClientError(envelope.message || "حدث خطأ غير متوقع.", envelope.errorCode || "UNKNOWN_ERROR");
+    }
+    if (envelope.data === null) throw new ApiClientError("لم يُعثر على بيانات في استجابة الخادم.", "NO_DATA");
+    return envelope.data;
+  });
+}
+
+function runMock(fn) {
+  try {
+    return Promise.resolve(fn());
+  } catch (err) {
+    if (err instanceof ApiClientError && (err.code === "SESSION_EXPIRED" || err.code === "UNAUTHENTICATED")) {
+      clearSession();
+      onSessionExpired && onSessionExpired();
+    }
+    return Promise.reject(err instanceof ApiClientError ? err : new ApiClientError(err.message || "حدث خطأ غير متوقع.", "UNKNOWN_ERROR"));
+  }
+}
+
+var onSessionExpired = null;
+
+var api = {
+  login: function (payload) {
+    if (isUsingMock()) return runMock(function () { return mockApi.login(payload); });
+    return callAppsScript("login", payload);
+  },
+  getEmployees: function (city) {
+    if (isUsingMock()) return runMock(function () { return mockApi.getEmployees(currentSessionToken(), city); });
+    return callAppsScript("getEmployees", { city: city });
+  },
+  submitLeave: function (payload) {
+    if (isUsingMock()) return runMock(function () { return mockApi.submitLeave(currentSessionToken(), payload); });
+    return callAppsScript("submitLeave", payload);
+  },
+  getMyRequests: function () {
+    if (isUsingMock()) return runMock(function () { return mockApi.getMyRequests(currentSessionToken()); });
+    return callAppsScript("getMyRequests", {});
+  },
+  getRequests: function () {
+    if (isUsingMock()) return runMock(function () { return mockApi.getRequests(currentSessionToken()); });
+    return callAppsScript("getRequests", {});
+  },
+  getEmployeeHistory: function (empNationalId) {
+    if (isUsingMock()) return runMock(function () { return mockApi.getEmployeeHistory(currentSessionToken(), empNationalId); });
+    return callAppsScript("getEmployeeHistory", { empNationalId: empNationalId });
+  },
+  getAllRequestsHistory: function (filters) {
+    if (isUsingMock()) return runMock(function () { return mockApi.getAllRequestsHistory(currentSessionToken(), filters); });
+    return callAppsScript("getAllRequestsHistory", filters);
+  },
+  updateStatus: function (payload) {
+    if (isUsingMock()) return runMock(function () { return mockApi.updateStatus(currentSessionToken(), payload); });
+    return callAppsScript("updateStatus", payload);
+  },
+  changePassword: function (payload) {
+    if (isUsingMock()) return runMock(function () { return mockApi.changePassword(currentSessionToken(), payload); });
+    return callAppsScript("changePassword", payload);
+  },
+  generateLeaveCertificate: function (requestId) {
+    if (isUsingMock()) return runMock(function () { return mockApi.generateLeaveCertificate(); });
+    return callAppsScript("generateLeaveCertificate", { requestId: requestId });
+  },
+  getHolidays: function () {
+    if (isUsingMock()) return runMock(function () { return mockApi.getHolidays(); });
+    return callAppsScript("getHolidays", {});
+  }
+};
+
+var holidaysCache = null;
+function getHolidaySetCached() {
+  if (holidaysCache) return Promise.resolve(holidaysCache);
+  return api.getHolidays().then(function (list) {
+    var set = {};
+    list.forEach(function (h) { set[h.date] = true; });
+    holidaysCache = set;
+    return set;
+  }).catch(function () {
+    return {}; // لا نعطّل الحساب بالكامل إن تعذر تحميل العطل الرسمية
+  });
+}
+
+// ================================================================
+// أدوات DOM عامة
+// ================================================================
+
+function qs(sel, root) { return (root || document).querySelector(sel); }
+function el(id) { return document.getElementById(id); }
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str).replace(/[&<>"']/g, function (c) {
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+  });
+}
+
+function showToast(kind, message) {
+  var host = el("toast-host");
+  var div = document.createElement("div");
+  div.className = "toast " + kind;
+  div.setAttribute("role", "status");
+  div.textContent = message;
+  host.appendChild(div);
+  setTimeout(function () { div.remove(); }, 4500);
+}
+
+// ================================================================
+// الحالة العامة للتطبيق
+// ================================================================
+
+var App = {
+  employee: null,
+  sessionExpiredNotice: false,
+  view: "login", // login | dashboard
+  activeTab: {}, // per-role active tab memory: {pm: 'queue', gm: 'queue', ...}
+  modal: null // { type, ...params } يُدار عبر renderModal()
+};
+
+onSessionExpired = function () {
+  App.employee = null;
+  App.sessionExpiredNotice = true;
+  render();
+};
+
+function bootstrapAuth() {
+  var session = loadSession();
+  if (session && session.employee) {
+    App.employee = session.employee;
+  }
+}
+
+function doLogout() {
+  clearSession();
+  App.employee = null;
+  App.modal = null;
+  render();
+}
+
+function updateEmployeeBalance(currentBalance) {
+  if (App.employee) App.employee.currentBalance = currentBalance;
+  var session = loadSession();
+  if (session) { session.employee = App.employee; saveSession(session); }
+}
+
+// ================================================================
+// حلقة العرض الرئيسية
+// ================================================================
+
+function render() {
+  var root = el("app");
+  if (!App.employee) {
+    root.innerHTML = renderSessionBanner() + renderLoginPage();
+    attachLoginHandlers();
+    return;
+  }
+  root.innerHTML = renderAppShell();
+  renderCurrentRolePage();
+  renderModalIfAny();
+}
+
+function renderSessionBanner() {
+  if (!App.sessionExpiredNotice) return "";
+  return '<div style="position:fixed;inset-inline:0;top:0;z-index:500;background:var(--rejected);color:#fff;text-align:center;padding:9px;font-size:13.5px;font-weight:700;">' +
+    'انتهت صلاحية الجلسة. سجّل الدخول من جديد. ' +
+    '<button onclick="App.sessionExpiredNotice=false;render();" style="margin-inline-start:10px;background:none;border:none;color:#fff;text-decoration:underline;cursor:pointer;font-weight:700;">إغلاق</button>' +
+    '</div>';
+}
+
+// ================================================================
+// شاشة تسجيل الدخول
+// ================================================================
+
+var loginState = { isLoggingIn: false, error: null };
+
+function renderLoginPage() {
+  var demoBox = "";
+  if (isUsingMock()) {
+    demoBox = '<div class="demo-box"><p style="margin:0;font-weight:700;">وضع البيانات التجريبية (لا يوجد اتصال حقيقي بـ Apps Script):</p><ul>' +
+      MOCK_EMPLOYEES.map(function (e) { return "<li>" + escapeHtml(e.name) + " — " + e.nationalId + " / " + e.password + "</li>"; }).join("") +
+      "</ul></div>";
+  }
+
+  return '' +
+  '<div class="login-wrap"><div class="login-card">' +
+    '<div style="text-align:center;margin-bottom:22px;">' +
+      '<div class="login-logo">إ</div>' +
+      '<h1 style="font-size:19px;font-weight:800;color:var(--navy);margin:0 0 4px;">نظام إدارة الإجازات</h1>' +
+      '<p style="font-size:13.5px;color:var(--muted-lt);margin:0;">سجّل الدخول للمتابعة إلى لوحتك</p>' +
+    '</div>' +
+    '<form id="login-form" class="card" novalidate>' +
+      '<div class="field"><label for="f-nid">رقم الهوية <span class="req">*</span></label>' +
+        '<input id="f-nid" name="nid" inputmode="numeric" autocomplete="username" placeholder="أدخل رقم الهوية" required /></div>' +
+      '<div class="field"><label for="f-pass">كلمة المرور <span class="req">*</span></label>' +
+        '<input id="f-pass" name="pass" type="password" autocomplete="current-password" placeholder="••••••••" required /></div>' +
+      (loginState.error ? '<p role="alert" style="background:var(--rejected-bg);color:var(--rejected);border-radius:var(--radius-ctl);padding:9px 12px;font-size:13px;font-weight:600;margin:0 0 14px;">' + escapeHtml(loginState.error) + '</p>' : '') +
+      '<button type="submit" class="btn btn-primary btn-block" ' + (loginState.isLoggingIn ? "disabled" : "") + '>' +
+        (loginState.isLoggingIn ? '<span class="spinner"></span> جارٍ الدخول...' : 'دخول') +
+      '</button>' +
+    '</form>' +
+    demoBox +
+    '<details class="settings-box"><summary>إعدادات الاتصال بالخادم</summary>' +
+      '<div style="margin-top:10px;">' +
+        '<div class="field" style="margin-bottom:8px;"><label for="s-url">رابط Google Apps Script Web App</label>' +
+          '<input id="s-url" placeholder="https://script.google.com/macros/s/.../exec" value="' + escapeHtml(SETTINGS.appsScriptUrl || "") + '" /></div>' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:10px;">' +
+          '<input type="checkbox" id="s-mock" ' + (SETTINGS.useMock ? "checked" : "") + ' style="width:auto;" /> استخدام بيانات تجريبية حتى مع وجود رابط' +
+        '</label>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="saveSettingsFromForm()">حفظ الإعدادات</button>' +
+        '<p class="hint" style="margin-top:8px;">تُحفظ هذه الإعدادات في متصفحك فقط (localStorage) ولا تُرسل لأي جهة. راجع قسم الإعداد أسفل الصفحة لتفاصيل نشر Apps Script.</p>' +
+      '</div>' +
+    '</details>' +
+  '</div></div>';
+}
+
+function attachLoginHandlers() {
+  var form = el("login-form");
+  if (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var nid = el("f-nid").value.trim();
+      var pass = el("f-pass").value;
+      if (!nid || !pass) return;
+      handleLoginSubmit(nid, pass);
+    });
+  }
+}
+
+function handleLoginSubmit(nid, pass) {
+  loginState.isLoggingIn = true;
+  loginState.error = null;
+  render();
+  api.login({ nationalId: nid, password: pass }).then(function (result) {
+    App.employee = result.employee;
+    saveSession({ employee: result.employee, sessionToken: result.sessionToken, loginAt: new Date().toISOString() });
+    loginState.isLoggingIn = false;
+    render();
+    if (result.mustChangePassword) {
+      ChangePasswordModal.open({ forced: true });
+    }
+  }).catch(function (err) {
+    loginState.isLoggingIn = false;
+    loginState.error = err instanceof ApiClientError ? err.message : "تعذر الاتصال بالخادم. تحقق من الاتصال وحاول مرة أخرى.";
+    render();
+  });
+}
+
+function saveSettingsFromForm() {
+  var url = el("s-url").value.trim();
+  var useMock = el("s-mock").checked;
+  SETTINGS = { appsScriptUrl: url, useMock: useMock };
+  saveSettings(SETTINGS);
+  holidaysCache = null;
+  showToast("success", "تم حفظ الإعدادات.");
+  render();
+}
+
+// ================================================================
+// الهيكل العام بعد تسجيل الدخول (Header + محتوى الصفحة)
+// ================================================================
+
+function renderAppShell() {
+  var e = App.employee;
+  return '' +
+  '<div class="header"><div class="header-inner">' +
+    '<div class="brand"><div class="brand-badge">إ</div><div>' +
+      '<p class="brand-title">نظام إدارة الإجازات</p><p class="brand-sub">' + escapeHtml(e.company) + '</p>' +
+    '</div></div>' +
+    '<div class="user-box">' +
+      '<div><p class="user-name">' + escapeHtml(e.name) + '</p><p class="user-role">' + ROLE_LABELS[e.role] + ' · ' + escapeHtml(e.city) + '</p></div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="ChangePasswordModal.open({forced:false})">تغيير كلمة المرور</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="doLogout()">تسجيل الخروج</button>' +
+    '</div>' +
+  '</div></div>' +
+  '<div class="main" id="page-content"></div>';
+}
+
+function renderCurrentRolePage() {
+  var role = App.employee.role;
+  var target = el("page-content");
+  if (role === "employee") { target.innerHTML = ""; EmployeeDashboard.mount(target); return; }
+  if (role === "pm" || role === "cm") { target.innerHTML = ""; ManagerDashboard.mount(target); return; }
+  if (role === "gm") { target.innerHTML = ""; GMDashboard.mount(target); return; }
+  if (role === "co") { target.innerHTML = ""; COPage.mount(target); return; }
+  target.innerHTML = '<p style="color:var(--rejected);">دور غير معروف: تعذر تحديد اللوحة المناسبة.</p>';
+}
+
+// ================================================================
+// مكوّنات مشتركة: بطاقة إحصائية، شارة حالة، جدول طلبات، فلاتر، ترقيم صفحات
+// ================================================================
+
+function renderStatCard(label, value, accentClass) {
+  return '<div class="card"><span class="stat-label">' + escapeHtml(label) + '</span><span class="stat-value ' + (accentClass || "") + '">' + value + '</span></div>';
+}
+
+function renderStatusBadge(status) {
+  return '<span class="badge ' + STATUS_BADGE_CLASS[status] + '">' + STATUS_LABELS[status] + '</span>';
+}
+
+function renderEmptyState(title, description) {
+  return '<div class="empty"><p style="font-weight:700;color:#3A4552;margin:0 0 4px;">' + escapeHtml(title) + '</p>' +
+    (description ? '<p style="font-size:12.5px;margin:0;">' + escapeHtml(description) + '</p>' : '') + '</div>';
+}
+
+function renderErrorState(message, retryFnName) {
+  return '<div class="error-box"><p style="margin:0 0 10px;">' + escapeHtml(message) + '</p>' +
+    (retryFnName ? '<button class="btn btn-secondary btn-sm" onclick="' + retryFnName + '()">إعادة المحاولة</button>' : '') + '</div>';
+}
+
+function renderCenterLoading(label) {
+  return '<div class="center-loading"><span class="spinner spinner-dark" style="width:26px;height:26px;"></span><p style="font-size:13px;margin:0;">' + escapeHtml(label || "جارٍ التحميل...") + '</p></div>';
+}
+
+/** يبني جدول طلبات بعرض عام قابل لإعادة الاستخدام بين لوحات المدير المختلفة */
+function renderRequestsTable(requests, opts) {
+  opts = opts || {};
+  var showActions = !!opts.showActions;
+  var onOpenEmployeeFn = opts.onOpenEmployeeFn || "openEmployeeHistory";
+  var canActFn = opts.canActFn; // اسم دالة عامة تُستدعى بـ(request) وتُعيد true/false
+  var onApproveFn = opts.onApproveFn;
+  var onRejectFn = opts.onRejectFn;
+
+  if (requests.length === 0) return renderEmptyState("لا توجد طلبات مطابقة", "جرّب تعديل الفلاتر أعلاه.");
+
+  var rows = requests.map(function (r) {
+    var allowed = canActFn ? window[canActFn](r) : false;
+    var stageNote = (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled")
+      ? '<div class="muted">' + STAGE_LABELS[statusToStage(r.status)] + '</div>' : "";
+    var actionsCell = "";
+    if (showActions) {
+      actionsCell = '<td>' + (allowed
+        ? '<div style="display:flex;gap:6px;">' +
+            '<button class="btn btn-primary btn-sm" onclick=\'' + onApproveFn + '(' + JSON.stringify(r.requestId) + ')\'>اعتماد</button>' +
+            '<button class="btn btn-danger btn-sm" onclick=\'' + onRejectFn + '(' + JSON.stringify(r.requestId) + ')\'>رفض</button>' +
+          '</div>'
+        : '<span class="muted">—</span>') + '</td>';
+    }
+    var reportCell = '<td>' + (r.status === "approved"
+      ? '<button class="btn btn-secondary btn-sm" onclick=\'downloadCertificate(' + JSON.stringify(r.requestId) + ', this)\'>تحميل PDF</button>'
+      : '<span class="muted">—</span>') + '</td>';
+    return '<tr>' +
+      '<td><button class="link-btn" onclick=\'' + onOpenEmployeeFn + '(' + JSON.stringify(r.nationalId) + ')\'>' + escapeHtml(r.employeeName) + '</button><div class="muted">' + r.requestId + '</div></td>' +
+      '<td>' + escapeHtml(r.department) + '<span class="muted"> · ' + escapeHtml(r.city || "—") + '</span></td>' +
+      '<td>' + LEAVE_POLICY[r.leaveType].label + '</td>' +
+      '<td>' + formatArabicRange(r.startDate, r.endDate) + '</td>' +
+      '<td>' + r.totalDays + '</td>' +
+      '<td>' + renderStatusBadge(r.status) + stageNote + '</td>' +
+      reportCell +
+      actionsCell +
+    '</tr>';
+  }).join("");
+
+  return '<div class="table-wrap"><table><thead><tr>' +
+    '<th>الموظف</th><th>القسم / المدينة</th><th>نوع الإجازة</th><th>الفترة</th><th>الأيام</th><th>الحالة</th><th>التقرير</th>' +
+    (showActions ? '<th>إجراء</th>' : '') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function renderFilterBar(idPrefix, filters, cities) {
+  var typeOptions = LEAVE_TYPE_OPTIONS.map(function (o) { return '<option value="' + o.value + '"' + (filters.leaveType === o.value ? " selected" : "") + '>' + o.label + '</option>'; }).join("");
+  var statusOptions = ALL_STATUSES.map(function (s) { return '<option value="' + s + '"' + (filters.status === s ? " selected" : "") + '>' + STATUS_LABELS[s] + '</option>'; }).join("");
+  var cityOptions = cities.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (filters.city === c ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("");
+
+  return '<div class="filter-grid">' +
+    '<div class="field" style="margin:0;"><label for="' + idPrefix + '-query">بحث بالاسم أو رقم الطلب</label><input id="' + idPrefix + '-query" value="' + escapeHtml(filters.query || "") + '" placeholder="ابحث..." oninput="' + idPrefix + 'FilterChanged()" /></div>' +
+    '<div class="field" style="margin:0;"><label for="' + idPrefix + '-city">المدينة</label><select id="' + idPrefix + '-city" onchange="' + idPrefix + 'FilterChanged()"><option value="">كل المدن</option>' + cityOptions + '</select></div>' +
+    '<div class="field" style="margin:0;"><label for="' + idPrefix + '-type">نوع الإجازة</label><select id="' + idPrefix + '-type" onchange="' + idPrefix + 'FilterChanged()"><option value="all">كل الأنواع</option>' + typeOptions + '</select></div>' +
+    '<div class="field" style="margin:0;"><label for="' + idPrefix + '-status">الحالة</label><select id="' + idPrefix + '-status" onchange="' + idPrefix + 'FilterChanged()"><option value="all">كل الحالات</option>' + statusOptions + '</select></div>' +
+  '</div>';
+}
+
+function readFilterBar(idPrefix) {
+  return {
+    query: el(idPrefix + "-query") ? el(idPrefix + "-query").value : "",
+    city: el(idPrefix + "-city") ? el(idPrefix + "-city").value : "",
+    leaveType: el(idPrefix + "-type") ? el(idPrefix + "-type").value : "all",
+    status: el(idPrefix + "-status") ? el(idPrefix + "-status").value : "all"
+  };
+}
+
+function applyClientFilters(items, filters) {
+  return items.filter(function (item) {
+    if (filters.query) {
+      var q = filters.query.trim().toLowerCase();
+      var matches = item.employeeName.toLowerCase().indexOf(q) !== -1 || item.nationalId.indexOf(q) !== -1 || item.requestId.toLowerCase().indexOf(q) !== -1;
+      if (!matches) return false;
+    }
+    if (filters.city && item.city && item.city !== filters.city) return false;
+    if (filters.leaveType !== "all" && item.leaveType !== filters.leaveType) return false;
+    if (filters.status !== "all" && item.status !== filters.status) return false;
+    return true;
+  });
+}
+
+function renderPagination(idPrefix, page, pageSize, total) {
+  var totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return "";
+  return '<div class="pagination-row"><span>صفحة ' + page + ' من ' + totalPages + ' — ' + total + ' نتيجة</span>' +
+    '<div style="display:flex;gap:6px;">' +
+      '<button class="btn btn-secondary btn-sm" ' + (page <= 1 ? "disabled" : "") + ' onclick="' + idPrefix + 'PageChange(' + (page - 1) + ')">السابق</button>' +
+      '<button class="btn btn-secondary btn-sm" ' + (page >= totalPages ? "disabled" : "") + ' onclick="' + idPrefix + 'PageChange(' + (page + 1) + ')">التالي</button>' +
+    '</div></div>';
+}
+
+// ================================================================
+// نظام النوافذ المنبثقة (Modal) العام
+// ================================================================
+
+function openModal(modalState) {
+  App.modal = modalState;
+  renderModalIfAny();
+}
+function closeModal(force) {
+  if (App.modal && App.modal.nonDismissable && !force) return; // نافذة إلزامية — لا تُغلق إلا بعد إتمام المطلوب
+  App.modal = null;
+  var host = el("modal-host");
+  if (host) host.remove();
+}
+
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && App.modal) closeModal();
+});
+
+function modalShell(title, bodyHtml, footHtml, size, nonDismissable) {
+  return '<div class="overlay" id="modal-host" ' + (nonDismissable ? "" : 'onmousedown="if(event.target===this) closeModal();"') + '>' +
+    '<div class="modal ' + (size === "lg" ? "lg" : "") + '">' +
+      '<div class="modal-head"><h2>' + escapeHtml(title) + '</h2>' +
+      (nonDismissable ? "" : '<button class="modal-close" onclick="closeModal()" aria-label="إغلاق">✕</button>') +
+      '</div>' +
+      '<div class="modal-body">' + bodyHtml + '</div>' +
+      (footHtml ? '<div class="modal-foot">' + footHtml + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function renderModalIfAny() {
+  var existing = el("modal-host");
+  if (existing) existing.remove();
+  if (!App.modal) return;
+  var html = "";
+  if (App.modal.type === "leaveForm") html = LeaveFormModal.render();
+  else if (App.modal.type === "approval") html = ApprovalModal.render();
+  else if (App.modal.type === "employeeHistory") html = EmployeeHistoryModal.render();
+  else if (App.modal.type === "changePassword") html = ChangePasswordModal.render();
+  if (!html) return;
+  document.body.insertAdjacentHTML("beforeend", html);
+  if (App.modal.type === "leaveForm") LeaveFormModal.afterRender();
+}
+
+// ================================================================
+// نافذة طلب إجازة جديد
+// ================================================================
+
+var LeaveFormModal = {
+  holidaySet: {},
+  isLoadingHolidays: true,
+  isSubmitting: false,
+  touched: false,
+
+  open: function () {
+    LeaveFormModal.isSubmitting = false;
+    LeaveFormModal.touched = false;
+    LeaveFormModal.isLoadingHolidays = true;
+    openModal({ type: "leaveForm" });
+    getHolidaySetCached().then(function (set) {
+      LeaveFormModal.holidaySet = set;
+      LeaveFormModal.isLoadingHolidays = false;
+      if (App.modal && App.modal.type === "leaveForm") LeaveFormModal.recalc();
+    });
+  },
+
+  render: function () {
+    var typeOptions = LEAVE_TYPE_OPTIONS.map(function (o) { return '<option value="' + o.value + '">' + o.label + '</option>'; }).join("");
+    var body = '' +
+      '<div class="field"><label for="lf-type">نوع الإجازة <span class="req">*</span></label>' +
+        '<select id="lf-type" onchange="LeaveFormModal.onTypeChange()">' + typeOptions + '</select></div>' +
+      '<div class="form-row-2">' +
+        '<div class="field"><label for="lf-start">تاريخ البداية <span class="req">*</span></label>' +
+          '<input id="lf-start" type="date" value="' + todayInRiyadh() + '" oninput="LeaveFormModal.recalc()" /></div>' +
+        '<div class="field"><label for="lf-end">تاريخ النهاية</label>' +
+          '<input id="lf-end" type="date" oninput="LeaveFormModal.recalc()" />' +
+          '<span class="hint" id="lf-end-hint"></span></div>' +
+      '</div>' +
+      '<div class="calc-box" id="lf-calc-box">حدد التواريخ لعرض عدد الأيام تلقائياً.</div>' +
+      '<div class="field"><label for="lf-sub">اسم البديل <span class="req">*</span></label><input id="lf-sub" placeholder="اسم الموظف البديل أثناء الإجازة" /><span class="err" id="lf-sub-err"></span></div>' +
+      '<div class="field"><label for="lf-reason">السبب <span class="req">*</span></label><textarea id="lf-reason" placeholder="اذكر سبب طلب الإجازة"></textarea><span class="err" id="lf-reason-err"></span></div>' +
+      '<button class="btn btn-primary btn-block" id="lf-submit" onclick="LeaveFormModal.submit()">إرسال الطلب</button>';
+    return modalShell("طلب إجازة جديد", body, null, "md");
+  },
+
+  afterRender: function () {
+    LeaveFormModal.recalc();
+  },
+
+  onTypeChange: function () {
+    el("lf-end").value = "";
+    LeaveFormModal.touched = false;
+    LeaveFormModal.recalc();
+  },
+
+  currentCalculation: null,
+
+  recalc: function () {
+    var type = el("lf-type") ? el("lf-type").value : "annual";
+    var start = el("lf-start") ? el("lf-start").value : "";
+    var endInput = el("lf-end");
+    var fixed = isFixedLeaveType(type);
+    endInput.disabled = fixed;
+
+    var box = el("lf-calc-box");
+    if (LeaveFormModal.isLoadingHolidays && !fixed) {
+      box.textContent = "جارٍ تحميل تقويم الإجازات الرسمية...";
+      LeaveFormModal.currentCalculation = null;
+      return;
+    }
+    if (!start || (!fixed && !endInput.value)) {
+      box.textContent = "حدد التواريخ لعرض عدد الأيام تلقائياً.";
+      LeaveFormModal.currentCalculation = null;
+      return;
+    }
+    var result = calculateLeave({ leaveType: type, startDate: start, endDate: fixed ? undefined : endInput.value, holidaySet: LeaveFormModal.holidaySet });
+    if (result.error) {
+      box.innerHTML = '<strong style="color:var(--rejected);">' + escapeHtml(result.error) + '</strong>';
+      LeaveFormModal.currentCalculation = null;
+      return;
+    }
+    if (fixed) endInput.value = result.endDate;
+    el("lf-end-hint").textContent = fixed ? "يُحسب تلقائياً حسب نوع الإجازة" : "";
+    box.innerHTML = '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;"><span>' + formatArabicRange(result.startDate, result.endDate) + '</span><strong>إجمالي الأيام: ' + result.totalDays + '</strong></div>';
+    LeaveFormModal.currentCalculation = result;
+  },
+
+  submit: function () {
+    LeaveFormModal.touched = true;
+    var sub = el("lf-sub").value.trim();
+    var reason = el("lf-reason").value.trim();
+    el("lf-sub-err").textContent = sub ? "" : "هذا الحقل مطلوب.";
+    el("lf-reason-err").textContent = reason ? "" : "هذا الحقل مطلوب.";
+
+    var calc = LeaveFormModal.currentCalculation;
+    if (!calc || !sub || !reason) return;
+
+    var type = el("lf-type").value;
+    var policy = LEAVE_POLICY[type];
+    if (policy.deducts && App.employee.currentBalance !== undefined && App.employee.currentBalance < calc.totalDays) {
+      showToast("error", "الرصيد الحالي لا يكفي لهذه المدة.");
+      return;
+    }
+
+    LeaveFormModal.isSubmitting = true;
+    var btn = el("lf-submit");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> جارٍ الإرسال...';
+
+    api.submitLeave({
+      nationalId: App.employee.nationalId,
+      leaveType: type,
+      startDate: calc.startDate,
+      endDate: calc.endDate,
+      totalDays: calc.totalDays,
+      substituteName: sub,
+      reason: reason
+    }).then(function () {
+      showToast("success", "تم إرسال الطلب بنجاح.");
+      closeModal();
+      if (typeof EmployeeDashboard !== "undefined") EmployeeDashboard.reload();
+    }).catch(function (err) {
+      showToast("error", err instanceof ApiClientError ? err.message : "تعذر إرسال الطلب.");
+      LeaveFormModal.isSubmitting = false;
+      btn.disabled = false;
+      btn.textContent = "إرسال الطلب";
+      // لا نغلق النافذة ولا نمسح القيم المُدخلة عند الفشل
+    });
+  }
+};
+
+// ================================================================
+// نافذة تأكيد الاعتماد / الرفض
+// ================================================================
+
+var ApprovalModal = {
+  open: function (request, action, onSuccessFn) {
+    openModal({ type: "approval", request: request, action: action, onSuccessFn: onSuccessFn, isSubmitting: false });
+  },
+
+  render: function () {
+    var m = App.modal, r = m.request, isReject = m.action === "rejected";
+    var body = '' +
+      '<div class="req-summary-box">' +
+        '<div class="flex-between" style="margin-bottom:8px;"><strong>' + escapeHtml(r.employeeName) + '</strong><span class="muted">' + r.requestId + '</span></div>' +
+        '<dl>' +
+          '<dt>نوع الإجازة</dt><dd>' + LEAVE_POLICY[r.leaveType].label + '</dd>' +
+          '<dt>الفترة</dt><dd>' + formatArabicRange(r.startDate, r.endDate) + '</dd>' +
+          '<dt>عدد الأيام</dt><dd>' + r.totalDays + '</dd>' +
+          '<dt>البديل</dt><dd>' + escapeHtml(r.substituteName || "—") + '</dd>' +
+          '<dt>السبب</dt><dd>' + escapeHtml(r.reason || "—") + '</dd>' +
+        '</dl>' +
+      '</div>' +
+      '<div class="field"><label for="am-comment">التعليق' + (isReject ? ' <span class="req">*</span>' : '') + '</label>' +
+        '<textarea id="am-comment" placeholder="' + (isReject ? "اذكر سبب الرفض (إلزامي)" : "تعليق اختياري") + '"></textarea>' +
+        (!isReject ? '<span class="hint">اختياري</span>' : '<span class="err" id="am-comment-err"></span>') +
+      '</div>';
+    var foot = '<button class="btn btn-secondary" onclick="closeModal()">إلغاء</button>' +
+      '<button class="btn ' + (isReject ? "btn-danger" : "btn-primary") + '" id="am-confirm" onclick="ApprovalModal.confirm()">' + (isReject ? "تأكيد الرفض" : "تأكيد الاعتماد") + '</button>';
+    return modalShell(isReject ? "تأكيد رفض الطلب" : "تأكيد اعتماد الطلب", body, foot, "md");
+  },
+
+  confirm: function () {
+    var m = App.modal;
+    var comment = el("am-comment").value.trim();
+    if (m.action === "rejected" && !comment) {
+      el("am-comment-err").textContent = "التعليق إلزامي عند الرفض.";
+      return;
+    }
+    var btn = el("am-confirm");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> جارٍ التنفيذ...';
+
+    api.updateStatus({ requestId: m.request.requestId, status: m.action, comment: comment }).then(function () {
+      showToast("success", m.action === "approved" ? "تم اعتماد الطلب بنجاح." : "تم رفض الطلب.");
+      var onSuccessFn = m.onSuccessFn;
+      closeModal();
+      if (onSuccessFn && window[onSuccessFn]) window[onSuccessFn]();
+    }).catch(function (err) {
+      showToast("error", err instanceof ApiClientError ? err.message : "تعذر تنفيذ الإجراء.");
+      btn.disabled = false;
+      btn.textContent = m.action === "rejected" ? "تأكيد الرفض" : "تأكيد الاعتماد";
+    });
+  }
+};
+
+// ================================================================
+// نافذة ملخص الموظف وسجله
+// ================================================================
+
+var EmployeeHistoryModal = {
+  nationalId: null,
+  loading: true,
+  error: null,
+  data: null,
+
+  open: function (nationalId) {
+    EmployeeHistoryModal.nationalId = nationalId;
+    EmployeeHistoryModal.loading = true;
+    EmployeeHistoryModal.error = null;
+    EmployeeHistoryModal.data = null;
+    openModal({ type: "employeeHistory" });
+    EmployeeHistoryModal.load();
+  },
+
+  load: function () {
+    EmployeeHistoryModal.loading = true;
+    EmployeeHistoryModal.error = null;
+    renderModalIfAny();
+    api.getEmployeeHistory(EmployeeHistoryModal.nationalId).then(function (result) {
+      EmployeeHistoryModal.data = result;
+      EmployeeHistoryModal.loading = false;
+      renderModalIfAny();
+    }).catch(function (err) {
+      EmployeeHistoryModal.error = err instanceof ApiClientError ? err.message : "تعذر تحميل سجل الموظف.";
+      EmployeeHistoryModal.loading = false;
+      renderModalIfAny(); // لا نغلق النافذة تلقائياً عند فشل التحميل
+    });
+  },
+
+  render: function () {
+    var body;
+    if (EmployeeHistoryModal.loading) {
+      body = renderCenterLoading("جارٍ تحميل سجل الموظف...");
+    } else if (EmployeeHistoryModal.error) {
+      body = renderErrorState(EmployeeHistoryModal.error, "EmployeeHistoryModal.load");
+    } else {
+      var d = EmployeeHistoryModal.data;
+      var infoGrid = '<div class="info-grid">' +
+        '<div><span class="k">الاسم</span><span class="v">' + escapeHtml(d.employee.name) + '</span></div>' +
+        '<div><span class="k">رقم الهوية</span><span class="v">' + escapeHtml(d.employee.nationalId) + '</span></div>' +
+        '<div><span class="k">القسم</span><span class="v">' + escapeHtml(d.employee.department) + '</span></div>' +
+        '<div><span class="k">المدينة</span><span class="v">' + escapeHtml(d.employee.city) + '</span></div>' +
+        (d.employee.currentBalance !== undefined ? '<div><span class="k">الرصيد الحالي</span><span class="v">' + d.employee.currentBalance + '</span></div>' : '') +
+        (d.employee.initialBalance !== undefined ? '<div><span class="k">الرصيد الابتدائي</span><span class="v">' + d.employee.initialBalance + '</span></div>' : '') +
+      '</div>';
+      var list = d.requests.length === 0
+        ? '<p class="muted" style="margin-top:10px;">لا يوجد سجل طلبات لهذا الموظف.</p>'
+        : '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">' +
+            d.requests.map(function (r) {
+              return '<div class="flex-between" style="border:1px solid var(--mist);border-radius:var(--radius-ctl);padding:9px 12px;font-size:13.5px;">' +
+                '<strong>' + LEAVE_POLICY[r.leaveType].label + '</strong>' +
+                '<span class="muted">' + formatArabicRange(r.startDate, r.endDate) + '</span>' +
+                '<span class="muted">' + r.totalDays + ' يوم</span>' +
+                renderStatusBadge(r.status) +
+              '</div>';
+            }).join("") +
+          '</div>';
+      body = infoGrid + '<h3 style="font-size:13.5px;color:var(--navy);margin:16px 0 4px;">سجل الطلبات</h3>' + list;
+    }
+    return modalShell("ملخص الموظف", body, null, "lg");
+  }
+};
+
+function openEmployeeHistory(nationalId) { EmployeeHistoryModal.open(nationalId); }
+
+// ================================================================
+// نافذة تغيير كلمة المرور — إلزامية بعد أول دخول بكلمة مرور افتراضية،
+// أو اختيارية في أي وقت من رابط "تغيير كلمة المرور" أعلى الصفحة
+// ================================================================
+
+var ChangePasswordModal = {
+  open: function (opts) {
+    opts = opts || {};
+    openModal({ type: "changePassword", forced: !!opts.forced, nonDismissable: !!opts.forced, isSubmitting: false });
+  },
+
+  render: function () {
+    var forced = App.modal.forced;
+    var intro = forced
+      ? '<p style="font-size:13px;color:var(--muted);margin:0 0 14px;">هذا أول تسجيل دخول لك بكلمة مرور افتراضية. لأمان حسابك، الرجاء تعيين كلمة مرور خاصة بك قبل المتابعة.</p>'
+      : "";
+    var body = intro +
+      '<div class="field"><label for="cp-current">كلمة المرور الحالية <span class="req">*</span></label><input id="cp-current" type="password" autocomplete="current-password" /></div>' +
+      '<div class="field"><label for="cp-new">كلمة المرور الجديدة <span class="req">*</span></label><input id="cp-new" type="password" autocomplete="new-password" /><span class="hint">6 أحرف على الأقل</span></div>' +
+      '<div class="field"><label for="cp-confirm">تأكيد كلمة المرور الجديدة <span class="req">*</span></label><input id="cp-confirm" type="password" autocomplete="new-password" /></div>' +
+      '<p class="err" id="cp-err" style="min-height:16px;"></p>';
+    var foot = (forced ? "" : '<button class="btn btn-secondary" onclick="closeModal()">إلغاء</button>') +
+      '<button class="btn btn-primary" id="cp-submit" onclick="ChangePasswordModal.submit()">حفظ كلمة المرور الجديدة</button>';
+    return modalShell("تغيير كلمة المرور", body, foot, "sm", App.modal.nonDismissable);
+  },
+
+  submit: function () {
+    var current = el("cp-current").value;
+    var next = el("cp-new").value;
+    var confirm = el("cp-confirm").value;
+    var errBox = el("cp-err");
+
+    if (!current || !next || !confirm) { errBox.textContent = "الرجاء تعبئة كل الحقول."; return; }
+    if (next.length < 6) { errBox.textContent = "كلمة المرور الجديدة يجب أن تتكون من 6 أحرف على الأقل."; return; }
+    if (next !== confirm) { errBox.textContent = "كلمة المرور الجديدة وتأكيدها غير متطابقين."; return; }
+    errBox.textContent = "";
+
+    var btn = el("cp-submit");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> جارٍ الحفظ...';
+
+    api.changePassword({ currentPassword: current, newPassword: next }).then(function () {
+      showToast("success", "تم تغيير كلمة المرور بنجاح.");
+      closeModal(true); // إغلاق قسري حتى لو كانت النافذة إلزامية — تمت المطلوب منها
+    }).catch(function (err) {
+      errBox.textContent = err instanceof ApiClientError ? err.message : "تعذر تغيير كلمة المرور.";
+      btn.disabled = false;
+      btn.textContent = "حفظ كلمة المرور الجديدة";
+    });
+  }
+};
+
+// ================================================================
+// لوحة الموظف
+// ================================================================
+
+var EmployeeDashboard = {
+  requests: [],
+  isLoading: true,
+  error: null,
+
+  mount: function (target) {
+    EmployeeDashboard.target = target;
+    EmployeeDashboard.load();
+  },
+
+  load: function () {
+    EmployeeDashboard.isLoading = true;
+    EmployeeDashboard.error = null;
+    EmployeeDashboard.renderInto();
+    api.getMyRequests().then(function (data) {
+      EmployeeDashboard.requests = data;
+      EmployeeDashboard.isLoading = false;
+      EmployeeDashboard.renderInto();
+    }).catch(function (err) {
+      EmployeeDashboard.error = err instanceof ApiClientError ? err.message : "تعذر تحميل البيانات.";
+      EmployeeDashboard.isLoading = false;
+      EmployeeDashboard.renderInto();
+    });
+  },
+
+  reload: function () { EmployeeDashboard.load(); },
+
+  renderInto: function () {
+    if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var e = App.employee;
+    var pendingCount = EmployeeDashboard.requests.filter(function (r) { return r.status.indexOf("pending") === 0; }).length;
+
+    var tableHtml;
+    if (EmployeeDashboard.isLoading) tableHtml = renderCenterLoading("جارٍ تحميل طلباتك...");
+    else if (EmployeeDashboard.error) tableHtml = renderErrorState(EmployeeDashboard.error, "EmployeeDashboard.load");
+    else tableHtml = renderMyRequestsTable(EmployeeDashboard.requests);
+
+    var html = '' +
+      '<div class="stat-grid">' +
+        renderStatCard("الرصيد الابتدائي", e.initialBalance !== undefined ? e.initialBalance : "—", "blue") +
+        renderStatCard("الرصيد الحالي", e.currentBalance !== undefined ? e.currentBalance : "—", "teal") +
+        renderStatCard("طلبات قيد المراجعة", pendingCount, "") +
+      '</div>' +
+      '<div class="flex-between" style="margin-bottom:14px;"><h2 class="page-title">طلباتي</h2>' +
+        '<button class="btn btn-primary" onclick="LeaveFormModal.open()">+ طلب إجازة</button>' +
+      '</div>' +
+      tableHtml;
+
+    EmployeeDashboard.target.innerHTML = html;
+  }
+};
+
+function renderMyRequestsTable(requests) {
+  if (requests.length === 0) return renderEmptyState("لا توجد طلبات إجازة بعد", "استخدم زر «طلب إجازة» لإنشاء طلبك الأول.");
+  var rows = requests.map(function (r) {
+    var comments = "";
+    if (r.pmComment) comments += "<p>مدير المشروع: " + escapeHtml(r.pmComment) + "</p>";
+    if (r.cmComment) comments += "<p>مدير العقد / المدير العام: " + escapeHtml(r.cmComment) + "</p>";
+    if (!comments) comments = "—";
+    var stageNote = (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled")
+      ? '<div class="muted">' + STAGE_LABELS[statusToStage(r.status)] + '</div>' : "";
+    var reportCell = r.status === "approved"
+      ? '<button class="btn btn-secondary btn-sm" onclick="downloadCertificate(' + JSON.stringify(r.requestId) + ', this)">تحميل PDF</button>'
+      : '<span class="muted">—</span>';
+    return '<tr>' +
+      '<td>' + LEAVE_POLICY[r.leaveType].label + '</td>' +
+      '<td>' + formatArabicRange(r.startDate, r.endDate) + '</td>' +
+      '<td>' + r.totalDays + '</td>' +
+      '<td>' + renderStatusBadge(r.status) + stageNote + '</td>' +
+      '<td style="max-width:220px;font-size:12px;">' + comments + '</td>' +
+      '<td class="muted">' + formatArabicDate(r.timestamp.slice(0, 10), false) + '</td>' +
+      '<td>' + reportCell + '</td>' +
+    '</tr>';
+  }).join("");
+  return '<div class="table-wrap"><table><thead><tr><th>نوع الإجازة</th><th>الفترة</th><th>الأيام</th><th>الحالة</th><th>التعليقات</th><th>تاريخ الطلب</th><th>التقرير</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+// ================================================================
+// لوحة المدير (PM / CM)
+// ================================================================
+
+var ManagerDashboard = {
+  tab: "queue",
+  requests: [],
+  isLoading: true,
+  error: null,
+  filters: { query: "", city: "", leaveType: "all", status: "all" },
+  busyRequestId: null,
+
+  mount: function (target) {
+    ManagerDashboard.target = target;
+    ManagerDashboard.tab = "queue";
+    ManagerDashboard.filters = { query: "", city: "", leaveType: "all", status: "all" };
+    ManagerDashboard.load();
+  },
+
+  load: function () {
+    ManagerDashboard.isLoading = true;
+    ManagerDashboard.error = null;
+    ManagerDashboard.renderInto();
+    api.getRequests().then(function (data) {
+      ManagerDashboard.requests = data;
+      ManagerDashboard.isLoading = false;
+      ManagerDashboard.renderInto();
+    }).catch(function (err) {
+      ManagerDashboard.error = err instanceof ApiClientError ? err.message : "تعذر تحميل الطلبات.";
+      ManagerDashboard.isLoading = false;
+      ManagerDashboard.renderInto();
+    });
+  },
+
+  reload: function () { ManagerDashboard.load(); },
+
+  setTab: function (tab) { ManagerDashboard.tab = tab; ManagerDashboard.renderInto(); },
+
+  cities: function () {
+    var set = {};
+    ManagerDashboard.requests.forEach(function (r) { if (r.city) set[r.city] = true; });
+    return Object.keys(set);
+  },
+
+  canAct: function (r) { return canRoleActOnStage(App.employee.role, statusToStage(r.status)); },
+
+  approve: function (requestId) {
+    var r = ManagerDashboard.requests.filter(function (x) { return x.requestId === requestId; })[0];
+    if (r) ApprovalModal.open(r, "approved", "ManagerDashboard.reload");
+  },
+  reject: function (requestId) {
+    var r = ManagerDashboard.requests.filter(function (x) { return x.requestId === requestId; })[0];
+    if (r) ApprovalModal.open(r, "rejected", "ManagerDashboard.reload");
+  },
+
+  renderInto: function () {
+    if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var tabsHtml = '<div class="flex-between" style="margin-bottom:18px;">' +
+      '<h1 class="page-title">لوحة الاعتماد</h1>' +
+      '<div class="segmented">' +
+        '<button class="tab-btn ' + (ManagerDashboard.tab === "queue" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'queue\')">الطلبات</button>' +
+        '<button class="tab-btn ' + (ManagerDashboard.tab === "myRequests" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'myRequests\')">طلباتي</button>' +
+        '<button class="tab-btn ' + (ManagerDashboard.tab === "archive" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'archive\')">الأرشيف</button>' +
+      '</div></div>' +
+      '<div id="mgr-tab-content"></div>';
+    ManagerDashboard.target.innerHTML = tabsHtml;
+    var content = el("mgr-tab-content");
+
+    if (ManagerDashboard.tab === "myRequests") {
+      EmployeeDashboard.mount(content);
+      return;
+    }
+    if (ManagerDashboard.tab === "archive") {
+      ArchiveTab.mount(content, "mgrArch", ManagerDashboard.cities());
+      return;
+    }
+
+    // queue
+    var pendingForMe = ManagerDashboard.requests.filter(ManagerDashboard.canAct).length;
+    var filtered = applyClientFilters(ManagerDashboard.requests, ManagerDashboard.filters);
+    var body;
+    if (ManagerDashboard.isLoading) body = renderCenterLoading("جارٍ تحميل الطلبات...");
+    else if (ManagerDashboard.error) body = renderErrorState(ManagerDashboard.error, "ManagerDashboard.load");
+    else body = renderRequestsTable(filtered, { showActions: true, canActFn: "mgrCanActGlobal", onApproveFn: "mgrApproveGlobal", onRejectFn: "mgrRejectGlobal" });
+
+    content.innerHTML =
+      '<div class="stat-grid">' +
+        renderStatCard("بانتظار اعتمادك", pendingForMe, "") +
+        renderStatCard("إجمالي الطلبات الظاهرة", ManagerDashboard.requests.length, "blue") +
+        renderStatCard("معتمدة", ManagerDashboard.requests.filter(function (r) { return r.status === "approved"; }).length, "teal") +
+      '</div>' +
+      renderFilterBar("mgrQ", ManagerDashboard.filters, ManagerDashboard.cities()) +
+      body;
+  }
+};
+
+function mgrCanActGlobal(r) { return ManagerDashboard.canAct(r); }
+function mgrApproveGlobal(id) { ManagerDashboard.approve(id); }
+function mgrRejectGlobal(id) { ManagerDashboard.reject(id); }
+function mgrQFilterChanged() { ManagerDashboard.filters = readFilterBar("mgrQ"); ManagerDashboard.renderInto(); }
+
+// ================================================================
+// تبويب الأرشيف المشترك (قراءة فقط، بحث + فلاتر + ترقيم صفحات)
+// ================================================================
+
+var ArchiveTab = {
+  instances: {}, // idPrefix -> { target, cities, filters, page, result, loading, error, enableExport, isExporting }
+
+  mount: function (target, idPrefix, cities, enableExport) {
+    ArchiveTab.instances[idPrefix] = {
+      target: target, cities: cities, enableExport: !!enableExport,
+      filters: { query: "", city: "", leaveType: "all", status: "all" },
+      page: 1, result: null, loading: true, error: null, isExporting: false
+    };
+    ArchiveTab.load(idPrefix);
+    // نربط دوال الفلترة/الترقيم بأسماء عامة خاصة بهذا idPrefix
+    window[idPrefix + "FilterChanged"] = function () {
+      var inst = ArchiveTab.instances[idPrefix];
+      inst.filters = readFilterBar(idPrefix);
+      inst.page = 1;
+      ArchiveTab.load(idPrefix);
+    };
+    window[idPrefix + "PageChange"] = function (p) {
+      ArchiveTab.instances[idPrefix].page = p;
+      ArchiveTab.load(idPrefix);
+    };
+  },
+
+  load: function (idPrefix) {
+    var inst = ArchiveTab.instances[idPrefix];
+    inst.loading = true; inst.error = null;
+    ArchiveTab.renderInto(idPrefix);
+    api.getAllRequestsHistory({
+      query: inst.filters.query || undefined,
+      city: inst.filters.city || undefined,
+      leaveType: inst.filters.leaveType === "all" ? undefined : inst.filters.leaveType,
+      status: inst.filters.status === "all" ? undefined : inst.filters.status,
+      page: inst.page, pageSize: 15
+    }).then(function (data) {
+      inst.result = data; inst.loading = false; ArchiveTab.renderInto(idPrefix);
+    }).catch(function (err) {
+      inst.error = err instanceof ApiClientError ? err.message : "تعذر تحميل الأرشيف.";
+      inst.loading = false; ArchiveTab.renderInto(idPrefix);
+    });
+  },
+
+  reload: function (idPrefix) { ArchiveTab.load(idPrefix); },
+
+  exportCsv: function (idPrefix) {
+    var inst = ArchiveTab.instances[idPrefix];
+    inst.isExporting = true;
+    ArchiveTab.renderInto(idPrefix);
+    api.getAllRequestsHistory({
+      query: inst.filters.query || undefined, city: inst.filters.city || undefined,
+      leaveType: inst.filters.leaveType === "all" ? undefined : inst.filters.leaveType,
+      status: inst.filters.status === "all" ? undefined : inst.filters.status,
+      page: 1, pageSize: 2000
+    }).then(function (data) {
+      inst.isExporting = false;
+      if (data.items.length === 0) { showToast("info", "لا توجد بيانات مطابقة للتصدير."); ArchiveTab.renderInto(idPrefix); return; }
+      downloadRequestsCsv(data.items);
+      showToast("success", "تم تصدير " + data.items.length + " طلباً.");
+      ArchiveTab.renderInto(idPrefix);
+    }).catch(function (err) {
+      inst.isExporting = false;
+      showToast("error", err instanceof ApiClientError ? err.message : "تعذر تصدير البيانات.");
+      ArchiveTab.renderInto(idPrefix);
+    });
+  },
+
+  renderInto: function (idPrefix) {
+    var inst = ArchiveTab.instances[idPrefix];
+    var exportBtn = inst.enableExport
+      ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-secondary btn-sm" ' + (inst.isExporting ? "disabled" : "") + ' onclick="ArchiveTab.exportCsv(\'' + idPrefix + '\')">' + (inst.isExporting ? '<span class="spinner spinner-dark"></span> جارٍ التصدير...' : "تصدير النتائج (CSV)") + '</button></div>'
+      : "";
+    var body;
+    if (inst.loading) body = renderCenterLoading("جارٍ تحميل الأرشيف...");
+    else if (inst.error) body = renderErrorState(inst.error, null) ; // إعادة المحاولة عبر إعادة تعيين الفلاتر أدناه
+    else {
+      body = renderRequestsTable(inst.result.items, {}) + renderPagination(idPrefix, inst.result.page, inst.result.pageSize, inst.result.total);
+    }
+    inst.target.innerHTML = renderFilterBar(idPrefix, inst.filters, inst.cities) + exportBtn + body;
+  }
+};
+
+function downloadCertificate(requestId, btn) {
+  var originalHtml = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>'; }
+  api.generateLeaveCertificate(requestId).then(function (result) {
+    var byteChars = atob(result.base64);
+    var byteNumbers = new Array(byteChars.length);
+    for (var i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    var blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url; link.download = result.filename || ("leave-certificate-" + requestId + ".pdf");
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast("success", "تم تحميل التقرير.");
+  }).catch(function (err) {
+    showToast("error", err instanceof ApiClientError ? err.message : "تعذر توليد التقرير.");
+  }).finally(function () {
+    if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+  });
+}
+
+function downloadRequestsCsv(requests) {
+  var columns = [
+    ["requestId","رقم الطلب"], ["nationalId","رقم الهوية"], ["employeeName","اسم الموظف"],
+    ["company","الشركة"], ["department","القسم"], ["city","المدينة"],
+    ["leaveTypeLabel","نوع الإجازة"], ["startDate","تاريخ البداية"], ["endDate","تاريخ النهاية"],
+    ["totalDays","عدد الأيام"], ["statusLabel","الحالة"], ["pmComment","تعليق مدير المشروع"],
+    ["cmComment","تعليق مدير العقد / المدير العام"], ["timestamp","تاريخ الطلب"], ["finalApprovalDate","تاريخ الاعتماد النهائي"]
+  ];
+  function esc(v) {
+    var s = v === undefined || v === null ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  var header = columns.map(function (c) { return esc(c[1]); }).join(",");
+  var rows = requests.map(function (r) {
+    var withLabels = Object.assign({}, r, { leaveTypeLabel: LEAVE_POLICY[r.leaveType].label, statusLabel: STATUS_LABELS[r.status] });
+    return columns.map(function (c) { return esc(withLabels[c[0]]); }).join(",");
+  });
+  var csv = "\uFEFF" + [header].concat(rows).join("\r\n");
+  var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url; link.download = "leave-requests-export.csv";
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// ================================================================
+// اللوحة التنفيذية للمدير العام (GM)
+// ================================================================
+
+var GMDashboard = {
+  tab: "queue",
+  requests: [],
+  isLoading: true,
+  error: null,
+  filters: { query: "", city: "", leaveType: "all", status: "all" },
+
+  mount: function (target) {
+    GMDashboard.target = target;
+    GMDashboard.tab = "queue";
+    GMDashboard.filters = { query: "", city: "", leaveType: "all", status: "all" };
+    GMDashboard.load();
+  },
+
+  load: function () {
+    GMDashboard.isLoading = true; GMDashboard.error = null;
+    GMDashboard.renderInto();
+    api.getRequests().then(function (data) {
+      GMDashboard.requests = data; GMDashboard.isLoading = false; GMDashboard.renderInto();
+    }).catch(function (err) {
+      GMDashboard.error = err instanceof ApiClientError ? err.message : "تعذر تحميل الطلبات.";
+      GMDashboard.isLoading = false; GMDashboard.renderInto();
+    });
+  },
+
+  reload: function () { GMDashboard.load(); },
+  setTab: function (tab) { GMDashboard.tab = tab; GMDashboard.renderInto(); },
+
+  cities: function () {
+    var set = {};
+    GMDashboard.requests.forEach(function (r) { if (r.city) set[r.city] = true; });
+    return Object.keys(set);
+  },
+
+  gmQueue: function () {
+    return GMDashboard.requests.filter(function (r) { return statusToStage(r.status) === "gm"; });
+  },
+
+  canAct: function (r) { return canRoleActOnStage("gm", statusToStage(r.status)); },
+  approve: function (id) { var r = GMDashboard.requests.filter(function (x) { return x.requestId === id; })[0]; if (r) ApprovalModal.open(r, "approved", "GMDashboard.reload"); },
+  reject: function (id) { var r = GMDashboard.requests.filter(function (x) { return x.requestId === id; })[0]; if (r) ApprovalModal.open(r, "rejected", "GMDashboard.reload"); },
+
+  renderInto: function () {
+    if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var tabsHtml = '<div class="flex-between" style="margin-bottom:18px;">' +
+      '<h1 class="page-title">اللوحة التنفيذية — المدير العام</h1>' +
+      '<div class="segmented">' +
+        '<button class="tab-btn ' + (GMDashboard.tab === "queue" ? "active" : "") + '" onclick="GMDashboard.setTab(\'queue\')">طلبات المسار المباشر</button>' +
+        '<button class="tab-btn ' + (GMDashboard.tab === "archive" ? "active" : "") + '" onclick="GMDashboard.setTab(\'archive\')">الأرشيف والتقارير</button>' +
+      '</div></div>' +
+      '<div id="gm-tab-content"></div>';
+    GMDashboard.target.innerHTML = tabsHtml;
+    var content = el("gm-tab-content");
+
+    if (GMDashboard.tab === "archive") { ArchiveTab.mount(content, "gmArch", GMDashboard.cities()); return; }
+
+    var queue = GMDashboard.gmQueue();
+    var filtered = applyClientFilters(queue, GMDashboard.filters);
+
+    function groupCount(items, keyFn) {
+      var map = {};
+      items.forEach(function (i) { var k = keyFn(i); map[k] = (map[k] || 0) + 1; });
+      return map;
+    }
+    function breakdownList(counts) {
+      var keys = Object.keys(counts);
+      if (keys.length === 0) return '<p class="muted">لا توجد بيانات.</p>';
+      return '<ul class="breakdown-list">' + keys.map(function (k) { return '<li><span>' + escapeHtml(k) + '</span><strong>' + counts[k] + '</strong></li>'; }).join("") + '</ul>';
+    }
+
+    var body;
+    if (GMDashboard.isLoading) body = renderCenterLoading("جارٍ تحميل الطلبات...");
+    else if (GMDashboard.error) body = renderErrorState(GMDashboard.error, "GMDashboard.load");
+    else body = renderRequestsTable(filtered, { showActions: true, canActFn: "gmCanActGlobal", onApproveFn: "gmApproveGlobal", onRejectFn: "gmRejectGlobal" });
+
+    content.innerHTML =
+      '<div class="stat-grid">' +
+        renderStatCard("بانتظار اعتمادك مباشرة", queue.filter(GMDashboard.canAct).length, "") +
+        renderStatCard("إجمالي الطلبات في النظام", GMDashboard.requests.length, "blue") +
+        renderStatCard("معتمدة", GMDashboard.requests.filter(function (r) { return r.status === "approved"; }).length, "teal") +
+        renderStatCard("مرفوضة", GMDashboard.requests.filter(function (r) { return r.status === "rejected"; }).length, "blue") +
+      '</div>' +
+      '<div class="breakdown-grid">' +
+        '<div class="card"><h3 style="font-size:13.5px;color:var(--navy);margin:0 0 10px;">حسب الشركة</h3>' + breakdownList(groupCount(GMDashboard.requests, function (r) { return r.company; })) + '</div>' +
+        '<div class="card"><h3 style="font-size:13.5px;color:var(--navy);margin:0 0 10px;">حسب المدينة</h3>' + breakdownList(groupCount(GMDashboard.requests, function (r) { return r.city || "غير محدد"; })) + '</div>' +
+      '</div>' +
+      renderFilterBar("gmQ", GMDashboard.filters, GMDashboard.cities()) +
+      body;
+  }
+};
+
+function gmCanActGlobal(r) { return GMDashboard.canAct(r); }
+function gmApproveGlobal(id) { GMDashboard.approve(id); }
+function gmRejectGlobal(id) { GMDashboard.reject(id); }
+function gmQFilterChanged() { GMDashboard.filters = readFilterBar("gmQ"); GMDashboard.renderInto(); }
+
+// ================================================================
+// لوحة مسؤول العقود (CO) — قراءة فقط
+// ================================================================
+
+var COPage = {
+  requests: null, isLoading: true, error: null,
+
+  mount: function (target) {
+    COPage.target = target;
+    COPage.load();
+  },
+
+  load: function () {
+    COPage.isLoading = true; COPage.error = null;
+    COPage.renderInto();
+    api.getRequests().then(function (data) {
+      COPage.requests = data; COPage.isLoading = false; COPage.renderInto();
+    }).catch(function (err) {
+      COPage.error = err instanceof ApiClientError ? err.message : "تعذر تحميل البيانات.";
+      COPage.isLoading = false; COPage.renderInto();
+    });
+  },
+
+  renderInto: function () {
+    if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var summary = "";
+    if (COPage.isLoading) summary = renderCenterLoading("جارٍ تحميل الملخص...");
+    else if (COPage.error) summary = renderErrorState(COPage.error, "COPage.load");
+    else {
+      var r = COPage.requests;
+      summary = '<div class="stat-grid">' +
+        renderStatCard("إجمالي الطلبات", r.length, "") +
+        renderStatCard("قيد المراجعة", r.filter(function (x) { return x.status.indexOf("pending") === 0; }).length, "blue") +
+        renderStatCard("معتمدة", r.filter(function (x) { return x.status === "approved"; }).length, "teal") +
+        renderStatCard("مرفوضة", r.filter(function (x) { return x.status === "rejected"; }).length, "blue") +
+      '</div>';
+    }
+    var cities = COPage.requests ? Array.from(new Set(COPage.requests.map(function (r) { return r.city; }).filter(Boolean))) : [];
+
+    COPage.target.innerHTML =
+      '<div style="margin-bottom:16px;"><h1 class="page-title">الأرشيف والتقارير</h1>' +
+        '<p class="muted" style="margin-top:4px;">صلاحية قراءة فقط — لا تظهر أزرار اعتماد أو رفض. يرفض الخادم أي محاولة لتغيير حالة الطلبات من هذا الحساب.</p>' +
+      '</div>' + summary + '<div id="co-archive-host"></div>';
+
+    ArchiveTab.mount(el("co-archive-host"), "coArch", cities, true);
+  }
+};
+
+// ================================================================
+// نقطة الانطلاق
+// ================================================================
+
+document.addEventListener("DOMContentLoaded", function () {
+  bootstrapAuth();
+  render();
+});
+
+</script>
+</body>
+</html>
