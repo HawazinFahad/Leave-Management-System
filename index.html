@@ -1897,7 +1897,7 @@ function renderMyRequestsTable(requests) {
     var stageNote = (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled")
       ? '<div class="muted">' + STAGE_LABELS[statusToStage(r.status)] + '</div>' : "";
     var reportCell = r.status === "approved"
-      ? '<button class="btn btn-secondary btn-sm" onclick="downloadCertificate(' + JSON.stringify(r.requestId) + ', this)">تحميل PDF</button>'
+      ? '<button class="btn btn-secondary btn-sm" onclick=\'downloadCertificate(' + JSON.stringify(r.requestId) + ', this)\'>تحميل PDF</button>'
       : '<span class="muted">—</span>';
     return '<tr>' +
       '<td>' + LEAVE_POLICY[r.leaveType].label + '</td>' +
