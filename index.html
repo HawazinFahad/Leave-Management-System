@@ -831,7 +831,9 @@ function callAppsScript(action, payload) {
       }
       throw new ApiClientError(envelope.message || "حدث خطأ غير متوقع.", envelope.errorCode || "UNKNOWN_ERROR");
     }
-    if (envelope.data === null) throw new ApiClientError("لم يُعثر على بيانات في استجابة الخادم.", "NO_DATA");
+    // ملاحظة: success:true مع data:null حالة صحيحة تماماً (مثال: تغيير كلمة
+    // المرور أو رفع التوقيع لا تحتاج إعادة أي بيانات، فقط تأكيد النجاح) —
+    // لا نعتبرها خطأ، ونعيد null للمستدعي كما هو ليتصرف حسب حاجته.
     return envelope.data;
   });
 }
