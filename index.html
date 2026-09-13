@@ -745,7 +745,7 @@ var mockApi = {
 
   uploadSignature: function (token, payload) {
     var actor = mockRequireSession(token);
-    if (["pm","cm","gm"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (actor.role !== "pm") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     if (!payload.signatureBase64 || payload.signatureBase64.indexOf("data:image/") !== 0) {
       throw new ApiClientError("صيغة الملف غير صالحة. الرجاء رفع صورة (PNG أو JPG).", "VALIDATION_ERROR");
     }
@@ -1129,7 +1129,7 @@ function renderAppShell() {
     '</div></div>' +
     '<div class="user-box">' +
       '<div><p class="user-name">' + escapeHtml(e.name) + '</p><p class="user-role">' + ROLE_LABELS[e.role] + ' · ' + escapeHtml(e.city) + '</p></div>' +
-      (["pm","cm","gm"].indexOf(e.role) !== -1 ? '<button class="btn btn-ghost btn-sm" onclick="SignatureUploadModal.open()">رفع التوقيع</button>' : '') +
+      (e.role === "pm" ? '<button class="btn btn-ghost btn-sm" onclick="SignatureUploadModal.open()">رفع التوقيع</button>' : '') +
       '<button class="btn btn-ghost btn-sm" onclick="ChangePasswordModal.open({forced:false})">تغيير كلمة المرور</button>' +
       '<button class="btn btn-secondary btn-sm" onclick="doLogout()">تسجيل الخروج</button>' +
     '</div>' +
