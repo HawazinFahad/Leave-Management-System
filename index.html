@@ -174,16 +174,28 @@
 
 // ------------------------------- الإعدادات -------------------------------
 
+/**
+ * ⚠️ عدّلي هذا السطر فقط قبل نشر الملف على GitHub (أو أي استضافة أخرى)،
+ * وضعي رابط Apps Script الفعلي بين علامتي التنصيص. بهذا يعمل التطبيق
+ * تلقائياً لكل موظف يفتح الرابط، دون أي إعداد أو تدخل من أحد.
+ *
+ * هذا الرابط ليس سراً (راجع الملاحظة الأمنية في README) — الحماية الفعلية
+ * كلها من جهة الخادم (Code.gs)، لذا لا مشكلة أمنية بوضعه هنا صراحة حتى لو
+ * كان المستودع عاماً (public) على GitHub.
+ */
+var DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzsjF6sHnfXTNa2ofrsmEvWTSFVjGvbz0rqni7fhY3BpkiXobBJWAMy4Iw1TYIy3WMl/exec";
+
 var SETTINGS_KEY = "leave_app_settings_v1";
 var SESSION_KEY = "leave_app_session_v1";
 
 function loadSettings() {
   try {
     var raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? JSON.parse(raw) : { appsScriptUrl: "", useMock: true };
+    if (raw) return JSON.parse(raw);
   } catch (e) {
-    return { appsScriptUrl: "", useMock: true };
+    /* تجاهل — نكمل بالإعداد الافتراضي أدناه */
   }
+  return { appsScriptUrl: DEFAULT_APPS_SCRIPT_URL, useMock: !DEFAULT_APPS_SCRIPT_URL };
 }
 function saveSettings(settings) {
   try {
@@ -927,6 +939,26 @@ function renderLoginPage() {
       "</ul></div>";
   }
 
+  // صندوق الإعدادات يظهر فقط أثناء التطوير المحلي (عندما لا يوجد رابط مثبّت
+  // في DEFAULT_APPS_SCRIPT_URL). بمجرد تثبيت رابط حقيقي فيه قبل النشر على
+  // GitHub، يختفي هذا الصندوق تلقائياً لكل من يفتح الرابط المنشور — فلا
+  // يقدر أي موظف رؤيته أو تغيير الاتصال بالخادم.
+  var settingsBox = "";
+  if (!DEFAULT_APPS_SCRIPT_URL) {
+    settingsBox =
+      '<details class="settings-box"><summary>إعدادات الاتصال بالخادم (للتطوير المحلي فقط)</summary>' +
+        '<div style="margin-top:10px;">' +
+          '<div class="field" style="margin-bottom:8px;"><label for="s-url">رابط Google Apps Script Web App</label>' +
+            '<input id="s-url" placeholder="https://script.google.com/macros/s/.../exec" value="' + escapeHtml(SETTINGS.appsScriptUrl || "") + '" /></div>' +
+          '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:10px;">' +
+            '<input type="checkbox" id="s-mock" ' + (SETTINGS.useMock ? "checked" : "") + ' style="width:auto;" /> استخدام بيانات تجريبية حتى مع وجود رابط' +
+          '</label>' +
+          '<button type="button" class="btn btn-secondary btn-sm" onclick="saveSettingsFromForm()">حفظ الإعدادات</button>' +
+          '<p class="hint" style="margin-top:8px;">تُحفظ هذه الإعدادات في متصفحك فقط. قبل نشر الملف على GitHub لفريقك، ثبّتي الرابط في متغيّر DEFAULT_APPS_SCRIPT_URL داخل الكود بدل الاعتماد على هذا الصندوق.</p>' +
+        '</div>' +
+      '</details>';
+  }
+
   return '' +
   '<div class="login-wrap"><div class="login-card">' +
     '<div style="text-align:center;margin-bottom:22px;">' +
@@ -945,17 +977,7 @@ function renderLoginPage() {
       '</button>' +
     '</form>' +
     demoBox +
-    '<details class="settings-box"><summary>إعدادات الاتصال بالخادم</summary>' +
-      '<div style="margin-top:10px;">' +
-        '<div class="field" style="margin-bottom:8px;"><label for="s-url">رابط Google Apps Script Web App</label>' +
-          '<input id="s-url" placeholder="https://script.google.com/macros/s/.../exec" value="' + escapeHtml(SETTINGS.appsScriptUrl || "") + '" /></div>' +
-        '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:10px;">' +
-          '<input type="checkbox" id="s-mock" ' + (SETTINGS.useMock ? "checked" : "") + ' style="width:auto;" /> استخدام بيانات تجريبية حتى مع وجود رابط' +
-        '</label>' +
-        '<button type="button" class="btn btn-secondary btn-sm" onclick="saveSettingsFromForm()">حفظ الإعدادات</button>' +
-        '<p class="hint" style="margin-top:8px;">تُحفظ هذه الإعدادات في متصفحك فقط (localStorage) ولا تُرسل لأي جهة. راجع قسم الإعداد أسفل الصفحة لتفاصيل نشر Apps Script.</p>' +
-      '</div>' +
-    '</details>' +
+    settingsBox +
   '</div></div>';
 }
 
