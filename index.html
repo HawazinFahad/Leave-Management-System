@@ -609,7 +609,7 @@ var mockApi = {
       nationalId: actor.nationalId, employeeName: actor.name, company: actor.company,
       department: actor.department, city: actor.city, leaveType: payload.leaveType,
       startDate: calc.startDate, endDate: calc.endDate, totalDays: calc.totalDays,
-      substituteName: payload.substituteName, reason: payload.reason,
+      substituteName: payload.substituteName, substituteNationalId: payload.substituteNationalId || "", reason: payload.reason,
       status: stageToStatus(stage), pmComment: "", cmComment: "",
       timestamp: nowInRiyadhISO(), finalApprovalDate: ""
     };
@@ -741,6 +741,34 @@ var mockApi = {
   getMyPermissions: function (token) {
     var actor = mockRequireSession(token);
     return mockDelay(mockDb.permissions.filter(function (p) { return p.nationalId === actor.nationalId; }));
+  },
+
+  uploadSignature: function (token, payload) {
+    var actor = mockRequireSession(token);
+    if (["pm","cm","gm"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (!payload.signatureBase64 || payload.signatureBase64.indexOf("data:image/") !== 0) {
+      throw new ApiClientError("صيغة الملف غير صالحة. الرجاء رفع صورة (PNG أو JPG).", "VALIDATION_ERROR");
+    }
+    actor.signature = payload.signatureBase64;
+    return mockDelay(null, 400);
+  },
+
+  generatePermissionCertificate: function () {
+    return Promise.reject(new ApiClientError("توليد تقرير PDF متاح فقط عند الاتصال بخادم Apps Script الحقيقي (غير متاح في وضع البيانات التجريبية).", "MOCK_UNSUPPORTED"));
+  },
+
+  getAllPermissionsHistory: function (token, filters) {
+    var actor = mockRequireSession(token);
+    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    var list = mockDb.permissions.slice();
+    if (filters.query) {
+      var q = filters.query.trim().toLowerCase();
+      list = list.filter(function (p) { return p.employeeName.toLowerCase().indexOf(q) !== -1 || p.nationalId.indexOf(q) !== -1; });
+    }
+    if (filters.dateFrom) list = list.filter(function (p) { return p.date >= filters.dateFrom; });
+    if (filters.dateTo) list = list.filter(function (p) { return p.date <= filters.dateTo; });
+    list.sort(function (a, b) { return a.timestamp < b.timestamp ? 1 : -1; });
+    return mockDelay(list);
   }
 };
 
@@ -870,6 +898,18 @@ var api = {
   getMyPermissions: function () {
     if (isUsingMock()) return runMock(function () { return mockApi.getMyPermissions(currentSessionToken()); });
     return callAppsScript("getMyPermissions", {});
+  },
+  uploadSignature: function (payload) {
+    if (isUsingMock()) return runMock(function () { return mockApi.uploadSignature(currentSessionToken(), payload); });
+    return callAppsScript("uploadSignature", payload);
+  },
+  generatePermissionCertificate: function (id) {
+    if (isUsingMock()) return runMock(function () { return mockApi.generatePermissionCertificate(); });
+    return callAppsScript("generatePermissionCertificate", { id: id });
+  },
+  getAllPermissionsHistory: function (filters) {
+    if (isUsingMock()) return runMock(function () { return mockApi.getAllPermissionsHistory(currentSessionToken(), filters); });
+    return callAppsScript("getAllPermissionsHistory", filters);
   },
   getHolidays: function () {
     if (isUsingMock()) return runMock(function () { return mockApi.getHolidays(); });
@@ -1087,6 +1127,7 @@ function renderAppShell() {
     '</div></div>' +
     '<div class="user-box">' +
       '<div><p class="user-name">' + escapeHtml(e.name) + '</p><p class="user-role">' + ROLE_LABELS[e.role] + ' · ' + escapeHtml(e.city) + '</p></div>' +
+      (["pm","cm","gm"].indexOf(e.role) !== -1 ? '<button class="btn btn-ghost btn-sm" onclick="SignatureUploadModal.open()">رفع التوقيع</button>' : '') +
       '<button class="btn btn-ghost btn-sm" onclick="ChangePasswordModal.open({forced:false})">تغيير كلمة المرور</button>' +
       '<button class="btn btn-secondary btn-sm" onclick="doLogout()">تسجيل الخروج</button>' +
     '</div>' +
@@ -1262,6 +1303,7 @@ function renderModalIfAny() {
   else if (App.modal.type === "employeeHistory") html = EmployeeHistoryModal.render();
   else if (App.modal.type === "changePassword") html = ChangePasswordModal.render();
   else if (App.modal.type === "permissionForm") html = PermissionFormModal.render();
+  else if (App.modal.type === "signatureUpload") html = SignatureUploadModal.render();
   if (!html) return;
   document.body.insertAdjacentHTML("beforeend", html);
   if (App.modal.type === "leaveForm") LeaveFormModal.afterRender();
@@ -1334,7 +1376,7 @@ var LeaveFormModal = {
     if (list === null) return; // لم تصل البيانات بعد
     if (list.length > 0) {
       var options = '<option value="" disabled selected>اختر الموظف البديل</option>' +
-        list.map(function (c) { return '<option value="' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + '</option>'; }).join("");
+        list.map(function (c) { return '<option value="' + escapeHtml(c.nationalId) + '">' + escapeHtml(c.name) + '</option>'; }).join("");
       subEl.outerHTML = '<select id="lf-sub">' + options + '</select>';
     } else {
       subEl.outerHTML = '<input id="lf-sub" placeholder="اسم الموظف البديل أثناء الإجازة" />';
@@ -1381,13 +1423,21 @@ var LeaveFormModal = {
 
   submit: function () {
     LeaveFormModal.touched = true;
-    var sub = el("lf-sub").value.trim();
+    var subEl = el("lf-sub");
+    var subName = "", subNationalId = "";
+    if (subEl.tagName === "SELECT") {
+      subNationalId = subEl.value.trim();
+      var selectedOption = subEl.options[subEl.selectedIndex];
+      subName = selectedOption ? selectedOption.text : "";
+    } else {
+      subName = subEl.value.trim();
+    }
     var reason = el("lf-reason").value.trim();
-    el("lf-sub-err").textContent = sub ? "" : "هذا الحقل مطلوب.";
+    el("lf-sub-err").textContent = subName ? "" : "هذا الحقل مطلوب.";
     el("lf-reason-err").textContent = reason ? "" : "هذا الحقل مطلوب.";
 
     var calc = LeaveFormModal.currentCalculation;
-    if (!calc || !sub || !reason) return;
+    if (!calc || !subName || !reason) return;
 
     var type = el("lf-type").value;
     var policy = LEAVE_POLICY[type];
@@ -1407,7 +1457,8 @@ var LeaveFormModal = {
       startDate: calc.startDate,
       endDate: calc.endDate,
       totalDays: calc.totalDays,
-      substituteName: sub,
+      substituteName: subName,
+      substituteNationalId: subNationalId,
       reason: reason
     }).then(function () {
       showToast("success", "تم إرسال الطلب بنجاح.");
@@ -1551,6 +1602,7 @@ var EmployeeHistoryModal = {
                 '<strong>' + formatArabicDate(p.date, false) + '</strong>' +
                 '<span class="muted">' + escapeHtml(p.fromTime) + ' — ' + escapeHtml(p.toTime) + '</span>' +
                 '<span class="muted">' + escapeHtml(p.reason) + '</span>' +
+                '<button class="btn btn-secondary btn-sm" onclick=\'downloadPermissionCertificate(' + JSON.stringify(p.id) + ', this)\'>PDF</button>' +
               '</div>';
             }).join("") +
           '</div>';
@@ -1616,6 +1668,74 @@ var PermissionFormModal = {
       showToast("error", err2 instanceof ApiClientError ? err2.message : "تعذر تسجيل الاستئذان.");
       btn.disabled = false;
       btn.textContent = "تسجيل الاستئذان";
+    });
+  }
+};
+
+// ================================================================
+// نافذة رفع التوقيع — لمدراء المشاريع/العقود/العام فقط، كل شخص يرفع توقيعه هو
+// ================================================================
+
+var SignatureUploadModal = {
+  isSubmitting: false,
+  previewSrc: null,
+
+  open: function () {
+    SignatureUploadModal.isSubmitting = false;
+    SignatureUploadModal.previewSrc = null;
+    openModal({ type: "signatureUpload" });
+  },
+
+  render: function () {
+    var preview = SignatureUploadModal.previewSrc
+      ? '<div style="text-align:center;margin-bottom:14px;"><img src="' + SignatureUploadModal.previewSrc + '" style="max-height:80px;border:1px solid var(--mist);border-radius:8px;padding:6px;background:#fff;" /></div>'
+      : "";
+    var body = '' +
+      '<p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">يظهر توقيعك تلقائياً في نماذج اعتماد الإجازة التي توافق عليها أنت شخصياً. يُفضّل صورة PNG بخلفية شفافة وحجم صغير.</p>' +
+      preview +
+      '<div class="field"><label for="sig-file">اختر صورة التوقيع</label><input id="sig-file" type="file" accept="image/png,image/jpeg" onchange="SignatureUploadModal.onFileChange()" /></div>' +
+      '<p class="err" id="sig-err" style="min-height:16px;"></p>' +
+      '<button class="btn btn-primary btn-block" id="sig-submit" onclick="SignatureUploadModal.submit()" disabled>رفع التوقيع</button>';
+    return modalShell("رفع التوقيع", body, null, "sm");
+  },
+
+  onFileChange: function () {
+    var input = el("sig-file");
+    var errBox = el("sig-err");
+    errBox.textContent = "";
+    var file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 300 * 1024) {
+      errBox.textContent = "حجم الصورة كبير جداً. الرجاء اختيار صورة أصغر من 300 كيلوبايت.";
+      input.value = "";
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      SignatureUploadModal.previewSrc = reader.result;
+      renderModalIfAny();
+      var btn = el("sig-submit");
+      if (btn) btn.disabled = false;
+    };
+    reader.onerror = function () {
+      errBox.textContent = "تعذرت قراءة الملف. حاولي مرة أخرى.";
+    };
+    reader.readAsDataURL(file);
+  },
+
+  submit: function () {
+    if (!SignatureUploadModal.previewSrc) return;
+    var btn = el("sig-submit");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> جارٍ الرفع...';
+
+    api.uploadSignature({ signatureBase64: SignatureUploadModal.previewSrc }).then(function () {
+      showToast("success", "تم رفع التوقيع بنجاح.");
+      closeModal();
+    }).catch(function (err) {
+      el("sig-err").textContent = err instanceof ApiClientError ? err.message : "تعذر رفع التوقيع.";
+      btn.disabled = false;
+      btn.textContent = "رفع التوقيع";
     });
   }
 };
@@ -1759,9 +1879,10 @@ function renderMyPermissionsTable(permissions) {
       '<td>' + escapeHtml(p.fromTime) + ' — ' + escapeHtml(p.toTime) + '</td>' +
       '<td>' + escapeHtml(p.reason) + '</td>' +
       '<td class="muted">' + formatArabicDate(p.timestamp.slice(0, 10), false) + '</td>' +
+      '<td><button class="btn btn-secondary btn-sm" onclick=\'downloadPermissionCertificate(' + JSON.stringify(p.id) + ', this)\'>تحميل PDF</button></td>' +
     '</tr>';
   }).join("");
-  return '<div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الوقت</th><th>السبب</th><th>تاريخ التسجيل</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  return '<div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>الوقت</th><th>السبب</th><th>تاريخ التسجيل</th><th>التقرير</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
 function renderMyRequestsTable(requests) {
@@ -1851,6 +1972,7 @@ var ManagerDashboard = {
       '<div class="segmented">' +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "queue" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'queue\')">الطلبات</button>' +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "myRequests" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'myRequests\')">طلباتي</button>' +
+        '<button class="tab-btn ' + (ManagerDashboard.tab === "permissions" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'permissions\')">الاستئذانات</button>' +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "archive" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'archive\')">الأرشيف</button>' +
       '</div></div>' +
       '<div id="mgr-tab-content"></div>';
@@ -1859,6 +1981,10 @@ var ManagerDashboard = {
 
     if (ManagerDashboard.tab === "myRequests") {
       EmployeeDashboard.mount(content);
+      return;
+    }
+    if (ManagerDashboard.tab === "permissions") {
+      PermissionsReportTab.mount(content, "mgrPerm");
       return;
     }
     if (ManagerDashboard.tab === "archive") {
@@ -1893,6 +2019,91 @@ function mgrQFilterChanged() { ManagerDashboard.filters = readFilterBar("mgrQ");
 // ================================================================
 // تبويب الأرشيف المشترك (قراءة فقط، بحث + فلاتر + ترقيم صفحات)
 // ================================================================
+
+// ================================================================
+// تقرير الاستئذانات للمدراء — فلاتر + "الأكثر استئذاناً" + تحميل PDF
+// ================================================================
+
+var PermissionsReportTab = {
+  instances: {},
+
+  mount: function (target, idPrefix) {
+    PermissionsReportTab.instances[idPrefix] = {
+      target: target, filters: { query: "", dateFrom: "", dateTo: "" }, items: [], loading: true, error: null
+    };
+    PermissionsReportTab.load(idPrefix);
+    window[idPrefix + "PermFilterChanged"] = function () {
+      var inst = PermissionsReportTab.instances[idPrefix];
+      inst.filters = {
+        query: el(idPrefix + "-perm-query") ? el(idPrefix + "-perm-query").value : "",
+        dateFrom: el(idPrefix + "-perm-from") ? el(idPrefix + "-perm-from").value : "",
+        dateTo: el(idPrefix + "-perm-to") ? el(idPrefix + "-perm-to").value : ""
+      };
+      PermissionsReportTab.load(idPrefix);
+    };
+  },
+
+  load: function (idPrefix) {
+    var inst = PermissionsReportTab.instances[idPrefix];
+    inst.loading = true; inst.error = null;
+    PermissionsReportTab.renderInto(idPrefix);
+    api.getAllPermissionsHistory({
+      query: inst.filters.query || undefined,
+      dateFrom: inst.filters.dateFrom || undefined,
+      dateTo: inst.filters.dateTo || undefined
+    }).then(function (data) {
+      inst.items = data; inst.loading = false; PermissionsReportTab.renderInto(idPrefix);
+    }).catch(function (err) {
+      inst.error = err instanceof ApiClientError ? err.message : "تعذر تحميل تقرير الاستئذانات.";
+      inst.loading = false; PermissionsReportTab.renderInto(idPrefix);
+    });
+  },
+
+  renderInto: function (idPrefix) {
+    var inst = PermissionsReportTab.instances[idPrefix];
+    var filterBar = '<div class="filter-grid" style="grid-template-columns:repeat(3,1fr);">' +
+      '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-query">بحث بالاسم أو رقم الهوية</label>' +
+        '<input id="' + idPrefix + '-perm-query" value="' + escapeHtml(inst.filters.query) + '" placeholder="ابحث..." oninput="' + idPrefix + 'PermFilterChanged()" /></div>' +
+      '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-from">من تاريخ</label>' +
+        '<input id="' + idPrefix + '-perm-from" type="date" value="' + escapeHtml(inst.filters.dateFrom) + '" onchange="' + idPrefix + 'PermFilterChanged()" /></div>' +
+      '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-to">إلى تاريخ</label>' +
+        '<input id="' + idPrefix + '-perm-to" type="date" value="' + escapeHtml(inst.filters.dateTo) + '" onchange="' + idPrefix + 'PermFilterChanged()" /></div>' +
+    '</div>';
+
+    if (inst.loading) { inst.target.innerHTML = filterBar + renderCenterLoading("جارٍ تحميل تقرير الاستئذانات..."); return; }
+    if (inst.error) { inst.target.innerHTML = filterBar + renderErrorState(inst.error, null); return; }
+
+    var counts = {};
+    inst.items.forEach(function (p) { counts[p.employeeName] = (counts[p.employeeName] || 0) + 1; });
+    var ranked = Object.keys(counts).map(function (name) { return { name: name, count: counts[name] }; })
+      .sort(function (a, b) { return b.count - a.count; }).slice(0, 8);
+
+    var breakdown = ranked.length === 0 ? '<p class="muted">لا توجد بيانات ضمن الفلاتر الحالية.</p>' :
+      '<ul class="breakdown-list">' + ranked.map(function (r) {
+        return '<li><span>' + escapeHtml(r.name) + '</span><strong>' + r.count + ' استئذان</strong></li>';
+      }).join("") + '</ul>';
+
+    var tableHtml;
+    if (inst.items.length === 0) {
+      tableHtml = renderEmptyState("لا توجد استئذانات مطابقة", "جرّب تعديل الفلاتر أعلاه.");
+    } else {
+      var rows = inst.items.map(function (p) {
+        return '<tr>' +
+          '<td><button class="link-btn" onclick=\'openEmployeeHistory(' + JSON.stringify(p.nationalId) + ')\'>' + escapeHtml(p.employeeName) + '</button></td>' +
+          '<td>' + formatArabicDate(p.date, false) + '</td>' +
+          '<td>' + escapeHtml(p.fromTime) + ' — ' + escapeHtml(p.toTime) + '</td>' +
+          '<td>' + escapeHtml(p.reason) + '</td>' +
+          '<td><button class="btn btn-secondary btn-sm" onclick=\'downloadPermissionCertificate(' + JSON.stringify(p.id) + ', this)\'>PDF</button></td>' +
+        '</tr>';
+      }).join("");
+      tableHtml = '<div class="table-wrap"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الوقت</th><th>السبب</th><th>التقرير</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    inst.target.innerHTML = filterBar +
+      '<div class="card" style="margin:16px 0;"><h3 style="font-size:13.5px;color:var(--navy);margin:0 0 10px;">الأكثر استئذاناً</h3>' + breakdown + '</div>' +
+      tableHtml;
+  }
+};
 
 var ArchiveTab = {
   instances: {}, // idPrefix -> { target, cities, filters, page, result, loading, error, enableExport, isExporting }
@@ -1974,19 +2185,36 @@ var ArchiveTab = {
   }
 };
 
+function downloadPdfFromBase64_(result, fallbackFilename) {
+  var byteChars = atob(result.base64);
+  var byteNumbers = new Array(byteChars.length);
+  for (var i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  var blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url; link.download = result.filename || fallbackFilename;
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function downloadCertificate(requestId, btn) {
   var originalHtml = btn ? btn.innerHTML : null;
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>'; }
   api.generateLeaveCertificate(requestId).then(function (result) {
-    var byteChars = atob(result.base64);
-    var byteNumbers = new Array(byteChars.length);
-    for (var i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-    var blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement("a");
-    link.href = url; link.download = result.filename || ("leave-certificate-" + requestId + ".pdf");
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadPdfFromBase64_(result, "leave-certificate-" + requestId + ".pdf");
+    showToast("success", "تم تحميل التقرير.");
+  }).catch(function (err) {
+    showToast("error", err instanceof ApiClientError ? err.message : "تعذر توليد التقرير.");
+  }).finally(function () {
+    if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+  });
+}
+
+function downloadPermissionCertificate(id, btn) {
+  var originalHtml = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner spinner-dark"></span>'; }
+  api.generatePermissionCertificate(id).then(function (result) {
+    downloadPdfFromBase64_(result, "permission-" + id + ".pdf");
     showToast("success", "تم تحميل التقرير.");
   }).catch(function (err) {
     showToast("error", err instanceof ApiClientError ? err.message : "تعذر توليد التقرير.");
@@ -2073,12 +2301,14 @@ var GMDashboard = {
       '<h1 class="page-title">اللوحة التنفيذية — المدير العام</h1>' +
       '<div class="segmented">' +
         '<button class="tab-btn ' + (GMDashboard.tab === "queue" ? "active" : "") + '" onclick="GMDashboard.setTab(\'queue\')">طلبات المسار المباشر</button>' +
+        '<button class="tab-btn ' + (GMDashboard.tab === "permissions" ? "active" : "") + '" onclick="GMDashboard.setTab(\'permissions\')">الاستئذانات</button>' +
         '<button class="tab-btn ' + (GMDashboard.tab === "archive" ? "active" : "") + '" onclick="GMDashboard.setTab(\'archive\')">الأرشيف والتقارير</button>' +
       '</div></div>' +
       '<div id="gm-tab-content"></div>';
     GMDashboard.target.innerHTML = tabsHtml;
     var content = el("gm-tab-content");
 
+    if (GMDashboard.tab === "permissions") { PermissionsReportTab.mount(content, "gmPerm"); return; }
     if (GMDashboard.tab === "archive") { ArchiveTab.mount(content, "gmArch", GMDashboard.cities()); return; }
 
     var queue = GMDashboard.gmQueue();
@@ -2126,10 +2356,12 @@ function gmQFilterChanged() { GMDashboard.filters = readFilterBar("gmQ"); GMDash
 // ================================================================
 
 var COPage = {
+  tab: "leaves",
   requests: null, isLoading: true, error: null,
 
   mount: function (target) {
     COPage.target = target;
+    COPage.tab = "leaves";
     COPage.load();
   },
 
@@ -2144,8 +2376,24 @@ var COPage = {
     });
   },
 
+  setTab: function (tab) { COPage.tab = tab; COPage.renderInto(); },
+
   renderInto: function () {
     if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var tabsHtml = '<div class="flex-between" style="margin-bottom:16px;">' +
+      '<div><h1 class="page-title">الأرشيف والتقارير</h1>' +
+        '<p class="muted" style="margin-top:4px;">صلاحية قراءة فقط — لا تظهر أزرار اعتماد أو رفض. يرفض الخادم أي محاولة لتغيير حالة الطلبات من هذا الحساب.</p>' +
+      '</div>' +
+      '<div class="segmented">' +
+        '<button class="tab-btn ' + (COPage.tab === "leaves" ? "active" : "") + '" onclick="COPage.setTab(\'leaves\')">الإجازات</button>' +
+        '<button class="tab-btn ' + (COPage.tab === "permissions" ? "active" : "") + '" onclick="COPage.setTab(\'permissions\')">الاستئذانات</button>' +
+      '</div></div>' +
+      '<div id="co-tab-content"></div>';
+    COPage.target.innerHTML = tabsHtml;
+    var content = el("co-tab-content");
+
+    if (COPage.tab === "permissions") { PermissionsReportTab.mount(content, "coPerm"); return; }
+
     var summary = "";
     if (COPage.isLoading) summary = renderCenterLoading("جارٍ تحميل الملخص...");
     else if (COPage.error) summary = renderErrorState(COPage.error, "COPage.load");
@@ -2160,11 +2408,7 @@ var COPage = {
     }
     var cities = COPage.requests ? Array.from(new Set(COPage.requests.map(function (r) { return r.city; }).filter(Boolean))) : [];
 
-    COPage.target.innerHTML =
-      '<div style="margin-bottom:16px;"><h1 class="page-title">الأرشيف والتقارير</h1>' +
-        '<p class="muted" style="margin-top:4px;">صلاحية قراءة فقط — لا تظهر أزرار اعتماد أو رفض. يرفض الخادم أي محاولة لتغيير حالة الطلبات من هذا الحساب.</p>' +
-      '</div>' + summary + '<div id="co-archive-host"></div>';
-
+    content.innerHTML = summary + '<div id="co-archive-host"></div>';
     ArchiveTab.mount(el("co-archive-host"), "coArch", cities, true);
   }
 };
