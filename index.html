@@ -425,16 +425,26 @@ function calculateLeave(params) {
 
 // ================================================================
 // مسار الاعتماد الإلزامي
+//
+// موظف عادي → المشرف → مدير المشروع → مدير العقد (نهائي)
+// المشرف → مدير المشروع → مدير العقد (نهائي)                    [يتجاوز مرحلته]
+// مدير المشروع → مدير العقد (نهائي)                              [يتجاوز المشرف ومرحلته]
+// إجازة استثنائية بدون أجر (أي مقدّم): مباشرة إلى المدير العام (نهائي)
+// مدير العقد والمدير العام لا يقدّمان طلبات إجازة أصلاً
 // ================================================================
 
+var SELF_SUBMIT_ROLES = ["employee", "supervisor", "pm"];
+
 function determineInitialStage(requesterRole, leaveType) {
-  var isExceptional = EXCEPTIONAL_GM_DIRECT_TYPES.indexOf(leaveType) !== -1;
-  var isExecutive = requesterRole === "pm" || requesterRole === "cm";
-  if (isExceptional || isExecutive) return "gm";
-  return "pm";
+  if (EXCEPTIONAL_GM_DIRECT_TYPES.indexOf(leaveType) !== -1) return "gm";
+  if (requesterRole === "employee") return "supervisor";
+  if (requesterRole === "supervisor") return "pm";
+  if (requesterRole === "pm") return "cm";
+  return "gm"; // احتياط دفاعي
 }
 
 function determineNextStage(currentStage) {
+  if (currentStage === "supervisor") return "pm";
   if (currentStage === "pm") return "cm";
   if (currentStage === "cm") return "done";
   if (currentStage === "gm") return "done";
@@ -448,6 +458,7 @@ function canRoleActOnStage(role, stage) {
 }
 
 function stageToStatus(stage) {
+  if (stage === "supervisor") return "pending_supervisor";
   if (stage === "pm") return "pending_pm";
   if (stage === "cm") return "pending_cm";
   if (stage === "gm") return "pending_gm";
@@ -455,6 +466,7 @@ function stageToStatus(stage) {
 }
 
 function statusToStage(status) {
+  if (status === "pending_supervisor") return "supervisor";
   if (status === "pending_pm") return "pm";
   if (status === "pending_cm") return "cm";
   if (status === "pending_gm") return "gm";
@@ -462,6 +474,7 @@ function statusToStage(status) {
 }
 
 var STAGE_LABELS = {
+  supervisor: "بانتظار اعتماد المشرف",
   pm: "بانتظار اعتماد مدير المشروع",
   cm: "بانتظار الاعتماد النهائي من مدير العقد",
   gm: "بانتظار اعتماد المدير العام",
@@ -477,6 +490,7 @@ function isFinalApprovalStage(stage) {
 // ================================================================
 
 var STATUS_LABELS = {
+  pending_supervisor: "قيد المراجعة (المشرف)",
   pending_pm: "قيد المراجعة (مدير المشروع)",
   pending_cm: "قيد المراجعة (مدير العقد)",
   pending_gm: "قيد المراجعة (المدير العام)",
@@ -486,25 +500,31 @@ var STATUS_LABELS = {
 };
 
 var STATUS_BADGE_CLASS = {
-  pending_pm: "pending", pending_cm: "pending", pending_gm: "pending",
+  pending_supervisor: "pending", pending_pm: "pending", pending_cm: "pending", pending_gm: "pending",
   approved: "approved", rejected: "rejected", cancelled: "cancelled"
 };
 
-var ALL_STATUSES = ["pending_pm", "pending_cm", "pending_gm", "approved", "rejected", "cancelled"];
+var ALL_STATUSES = ["pending_supervisor", "pending_pm", "pending_cm", "pending_gm", "approved", "rejected", "cancelled"];
 
-var ROLE_LABELS = { employee: "موظف", pm: "مدير مشروع", cm: "مدير عقد", co: "مسؤول عقود", gm: "المدير العام" };
+var ROLE_LABELS = { employee: "موظف", supervisor: "مشرف", pm: "مدير مشروع", cm: "مدير عقد", co: "مسؤول عقود", gm: "المدير العام" };
 
 // ================================================================
 // بيانات تجريبية (Mock) — تُستخدم فقط عند عدم ضبط رابط Apps Script حقيقي
 // ================================================================
 
 var MOCK_EMPLOYEES = [
-  { nationalId:"1010101010", password:"1234", name:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", jobTitle:"أخصائي عمليات", initialBalance:30, currentBalance:21, email:"salem.harbi@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"الرياض" },
-  { nationalId:"2020202020", password:"1234", name:"منى القحطاني", company:"الشركة التجريبية", department:"الموارد البشرية", jobTitle:"منسقة موارد بشرية", initialBalance:30, currentBalance:30, email:"mona.q@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"جدة" },
+  // ---- الشركة التجريبية ----
+  { nationalId:"1010101010", password:"1234", name:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", jobTitle:"أخصائي عمليات", initialBalance:30, currentBalance:21, email:"salem.harbi@example.com", supervisorEmail:"supervisor1@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"الرياض" },
+  { nationalId:"2020202020", password:"1234", name:"منى القحطاني", company:"الشركة التجريبية", department:"الموارد البشرية", jobTitle:"منسقة موارد بشرية", initialBalance:30, currentBalance:30, email:"mona.q@example.com", supervisorEmail:"supervisor1@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"جدة" },
+  { nationalId:"7070707070", password:"1234", name:"عمر الشهري", company:"الشركة التجريبية", department:"العمليات", jobTitle:"مشرف عمليات", initialBalance:25, currentBalance:25, email:"omar.shahri@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"supervisor", city:"الرياض" },
   { nationalId:"3030303030", password:"1234", name:"خالد الدوسري", company:"الشركة التجريبية", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:24, email:"khaled.dosari@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"pm", city:"الرياض" },
   { nationalId:"4040404040", password:"1234", name:"فيصل العنزي", company:"الشركة التجريبية", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"faisal.anzi@example.com", gmEmail:"gm@example.com", role:"cm", city:"الرياض" },
   { nationalId:"5050505050", password:"1234", name:"عبدالله المطيري", company:"الشركة التجريبية", department:"الشؤون القانونية والعقود", jobTitle:"مسؤول عقود", initialBalance:30, currentBalance:30, email:"abdullah.mutairi@example.com", role:"co", city:"الرياض" },
-  { nationalId:"6060606060", password:"1234", name:"نورة الشمري", company:"الشركة التجريبية", department:"الإدارة التنفيذية", jobTitle:"المدير العام", initialBalance:30, currentBalance:30, email:"noura.shamri@example.com", role:"gm", city:"الرياض" }
+  { nationalId:"6060606060", password:"1234", name:"نورة الشمري", company:"الشركة التجريبية", department:"الإدارة التنفيذية", jobTitle:"المدير العام", initialBalance:30, currentBalance:30, email:"noura.shamri@example.com", role:"gm", city:"الرياض" },
+  // ---- شركة الرواد (لاختبار عزل الشركتين) ----
+  { nationalId:"8080808080", password:"1234", name:"بندر القرني", company:"شركة الرواد", department:"المبيعات", jobTitle:"أخصائي مبيعات", initialBalance:30, currentBalance:30, email:"bandar.q@example.com", pmEmail:"pm2@example.com", cmEmail:"cm2@example.com", gmEmail:"gm@example.com", role:"employee", city:"الدمام" },
+  { nationalId:"9090909090", password:"1234", name:"سعيد آل مبارك", company:"شركة الرواد", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:30, email:"saeed.mubarak@example.com", cmEmail:"cm2@example.com", gmEmail:"gm@example.com", role:"pm", city:"الدمام" },
+  { nationalId:"1212121212", password:"1234", name:"تركي الزهراني", company:"شركة الرواد", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"turki.zahrani@example.com", gmEmail:"gm@example.com", role:"cm", city:"الدمام" }
 ];
 
 var MOCK_HOLIDAYS = [
@@ -515,8 +535,8 @@ var MOCK_HOLIDAYS = [
 ];
 
 var MOCK_REQUESTS = [
-  { requestId:"REQ-0001", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"annual", startDate:"2026-08-02", endDate:"2026-08-06", totalDays:4, substituteName:"منى القحطاني", reason:"إجازة سنوية مجدولة", status:"approved", pmComment:"موافق", cmComment:"معتمد", timestamp:"2026-07-20T09:15:00+03:00", finalApprovalDate:"2026-07-22T11:00:00+03:00" },
-  { requestId:"REQ-0002", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"sick", startDate:"2026-09-10", endDate:"2026-09-11", totalDays:2, substituteName:"-", reason:"وعكة صحية", status:"pending_pm", pmComment:"", cmComment:"", timestamp:"2026-09-09T08:00:00+03:00", finalApprovalDate:"" }
+  { requestId:"REQ-0001", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"annual", startDate:"2026-08-02", endDate:"2026-08-06", totalDays:4, substituteName:"منى القحطاني", reason:"إجازة سنوية مجدولة", status:"approved", supervisorComment:"موافق", pmComment:"موافق", cmComment:"معتمد", timestamp:"2026-07-20T09:15:00+03:00", finalApprovalDate:"2026-07-22T11:00:00+03:00" },
+  { requestId:"REQ-0002", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"sick", startDate:"2026-09-10", endDate:"2026-09-11", totalDays:2, substituteName:"-", reason:"وعكة صحية", status:"pending_supervisor", supervisorComment:"", pmComment:"", cmComment:"", timestamp:"2026-09-09T08:00:00+03:00", finalApprovalDate:"" }
 ];
 
 // نسخ عميقة قابلة للتعديل أثناء الجلسة (تُهيَّأ عند كل تحميل صفحة من جديد)
@@ -535,7 +555,7 @@ function mockDelay(value, ms) {
 }
 
 function mockPublicEmployee(e) {
-  return { nationalId: e.nationalId, name: e.name, company: e.company, department: e.department, jobTitle: e.jobTitle, initialBalance: e.initialBalance, currentBalance: e.currentBalance, email: e.email, role: e.role, city: e.city };
+  return { nationalId: e.nationalId, name: e.name, company: e.company, department: e.department, jobTitle: e.jobTitle, initialBalance: e.initialBalance, currentBalance: e.currentBalance, email: e.email, role: e.role, city: e.city, hasSignature: !!e.signature };
 }
 
 function ApiClientError(message, code) {
@@ -574,24 +594,30 @@ var mockApi = {
     return mockDelay(result);
   },
 
-  getEmployees: function (token, city) {
+  getEmployees: function (token, city, company) {
     var actor = mockRequireSession(token);
-    if (actor.role === "employee") {
+    if (SELF_SUBMIT_ROLES.indexOf(actor.role) !== -1) {
       var colleagues = mockDb.employees
         .filter(function (e) { return e.company === actor.company && e.nationalId !== actor.nationalId; })
         .map(function (e) { return { nationalId: e.nationalId, name: e.name }; });
       return mockDelay(colleagues);
     }
-    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) {
+    if (["cm","gm","co"].indexOf(actor.role) === -1) {
       throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     }
-    var list = mockDb.employees;
-    if (city) list = list.filter(function (e) { return e.city === city; });
+    var list = mockDb.employees.filter(function (e) {
+      if (actor.role === "cm" && e.company !== actor.company) return false;
+      if (company && e.company !== company) return false;
+      return !city || e.city === city;
+    });
     return mockDelay(list.map(mockPublicEmployee));
   },
 
   submitLeave: function (token, payload) {
     var actor = mockRequireSession(token);
+    if (SELF_SUBMIT_ROLES.indexOf(actor.role) === -1) {
+      throw new ApiClientError("لا تملك صلاحية تقديم طلبات إجازة.", "FORBIDDEN");
+    }
     if (actor.nationalId !== payload.nationalId) {
       throw new ApiClientError("لا يمكن تقديم طلب نيابة عن موظف آخر.", "FORBIDDEN");
     }
@@ -610,7 +636,7 @@ var mockApi = {
       department: actor.department, city: actor.city, leaveType: payload.leaveType,
       startDate: calc.startDate, endDate: calc.endDate, totalDays: calc.totalDays,
       substituteName: payload.substituteName, substituteNationalId: payload.substituteNationalId || "", reason: payload.reason,
-      status: stageToStatus(stage), pmComment: "", cmComment: "",
+      status: stageToStatus(stage), supervisorComment: "", pmComment: "", cmComment: "",
       timestamp: nowInRiyadhISO(), finalApprovalDate: ""
     };
     mockDb.requests.unshift(record);
@@ -633,9 +659,12 @@ var mockApi = {
 
   getEmployeeHistory: function (token, empNationalId) {
     var actor = mockRequireSession(token);
-    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (["supervisor","pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     var emp = mockDb.employees.filter(function (e) { return e.nationalId === empNationalId; })[0];
     if (!emp) throw new ApiClientError("الموظف غير موجود.", "NOT_FOUND");
+    if (["supervisor","pm","cm"].indexOf(actor.role) !== -1 && emp.company !== actor.company) {
+      throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    }
     return mockDelay({
       employee: mockPublicEmployee(emp),
       requests: mockDb.requests.filter(function (r) { return r.nationalId === empNationalId; }),
@@ -645,8 +674,14 @@ var mockApi = {
 
   getAllRequestsHistory: function (token, filters) {
     var actor = mockRequireSession(token);
-    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (["supervisor","pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     var list = mockDb.requests.slice();
+    if (["supervisor","pm","cm"].indexOf(actor.role) !== -1) {
+      list = list.filter(function (r) { return r.company === actor.company; });
+    } else if (filters.company) {
+      list = list.filter(function (r) { return r.company === filters.company; });
+    }
+    if (filters.month) list = list.filter(function (r) { return String(r.startDate).indexOf(filters.month) === 0; });
     if (filters.query) {
       var q = filters.query.trim().toLowerCase();
       list = list.filter(function (r) { return r.employeeName.toLowerCase().indexOf(q) !== -1 || r.nationalId.indexOf(q) !== -1 || r.requestId.toLowerCase().indexOf(q) !== -1; });
@@ -678,7 +713,9 @@ var mockApi = {
     if (payload.status === "rejected") {
       if (!payload.comment || !payload.comment.trim()) throw new ApiClientError("التعليق إلزامي عند الرفض.", "VALIDATION_ERROR");
       req.status = "rejected";
-      if (actor.role === "pm") req.pmComment = payload.comment; else req.cmComment = payload.comment;
+      if (actor.role === "supervisor") req.supervisorComment = payload.comment;
+      else if (actor.role === "pm") req.pmComment = payload.comment;
+      else req.cmComment = payload.comment;
       return mockDelay(req, 500);
     }
 
@@ -695,7 +732,9 @@ var mockApi = {
       }
     }
     req.status = stageToStatus(nextStage);
-    if (actor.role === "pm") req.pmComment = payload.comment || req.pmComment; else req.cmComment = payload.comment || req.cmComment;
+    if (actor.role === "supervisor") req.supervisorComment = payload.comment || req.supervisorComment;
+    else if (actor.role === "pm") req.pmComment = payload.comment || req.pmComment;
+    else req.cmComment = payload.comment || req.cmComment;
     if (willFinalize) req.finalApprovalDate = nowInRiyadhISO();
     return mockDelay(req, 500);
   },
@@ -721,6 +760,9 @@ var mockApi = {
 
   submitPermission: function (token, payload) {
     var actor = mockRequireSession(token);
+    if (SELF_SUBMIT_ROLES.indexOf(actor.role) === -1) {
+      throw new ApiClientError("لا تملك صلاحية تسجيل استئذان.", "FORBIDDEN");
+    }
     var date = String(payload.date || "").trim();
     var fromTime = String(payload.fromTime || "").trim();
     var toTime = String(payload.toTime || "").trim();
@@ -730,7 +772,7 @@ var mockApi = {
     if (!reason) throw new ApiClientError("سبب الاستئذان مطلوب.", "VALIDATION_ERROR");
     var record = {
       id: "PRM-" + String(mockDb.permSeq++).padStart(4, "0"),
-      nationalId: actor.nationalId, employeeName: actor.name,
+      nationalId: actor.nationalId, employeeName: actor.name, company: actor.company, department: actor.department,
       date: date, fromTime: fromTime, toTime: toTime, reason: reason,
       timestamp: nowInRiyadhISO()
     };
@@ -759,8 +801,14 @@ var mockApi = {
 
   getAllPermissionsHistory: function (token, filters) {
     var actor = mockRequireSession(token);
-    if (["pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (["supervisor","pm","cm","gm","co"].indexOf(actor.role) === -1) throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     var list = mockDb.permissions.slice();
+    if (["supervisor","pm","cm"].indexOf(actor.role) !== -1) {
+      list = list.filter(function (p) { return p.company === actor.company; });
+    } else if (filters.company) {
+      list = list.filter(function (p) { return p.company === filters.company; });
+    }
+    if (filters.month) list = list.filter(function (p) { return String(p.date).indexOf(filters.month) === 0; });
     if (filters.query) {
       var q = filters.query.trim().toLowerCase();
       list = list.filter(function (p) { return p.employeeName.toLowerCase().indexOf(q) !== -1 || p.nationalId.indexOf(q) !== -1; });
@@ -857,9 +905,9 @@ var api = {
     if (isUsingMock()) return runMock(function () { return mockApi.login(payload); });
     return callAppsScript("login", payload);
   },
-  getEmployees: function (city) {
-    if (isUsingMock()) return runMock(function () { return mockApi.getEmployees(currentSessionToken(), city); });
-    return callAppsScript("getEmployees", { city: city });
+  getEmployees: function (city, company) {
+    if (isUsingMock()) return runMock(function () { return mockApi.getEmployees(currentSessionToken(), city, company); });
+    return callAppsScript("getEmployees", { city: city, company: company });
   },
   submitLeave: function (payload) {
     if (isUsingMock()) return runMock(function () { return mockApi.submitLeave(currentSessionToken(), payload); });
@@ -1141,7 +1189,7 @@ function renderCurrentRolePage() {
   var role = App.employee.role;
   var target = el("page-content");
   if (role === "employee") { target.innerHTML = ""; EmployeeDashboard.mount(target); return; }
-  if (role === "pm" || role === "cm") { target.innerHTML = ""; ManagerDashboard.mount(target); return; }
+  if (role === "supervisor" || role === "pm" || role === "cm") { target.innerHTML = ""; ManagerDashboard.mount(target); return; }
   if (role === "gm") { target.innerHTML = ""; GMDashboard.mount(target); return; }
   if (role === "co") { target.innerHTML = ""; COPage.mount(target); return; }
   target.innerHTML = '<p style="color:var(--rejected);">دور غير معروف: تعذر تحديد اللوحة المناسبة.</p>';
@@ -1218,25 +1266,34 @@ function renderRequestsTable(requests, opts) {
     '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
-function renderFilterBar(idPrefix, filters, cities) {
+function renderFilterBar(idPrefix, filters, cities, companies) {
   var typeOptions = LEAVE_TYPE_OPTIONS.map(function (o) { return '<option value="' + o.value + '"' + (filters.leaveType === o.value ? " selected" : "") + '>' + o.label + '</option>'; }).join("");
   var statusOptions = ALL_STATUSES.map(function (s) { return '<option value="' + s + '"' + (filters.status === s ? " selected" : "") + '>' + STATUS_LABELS[s] + '</option>'; }).join("");
   var cityOptions = cities.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (filters.city === c ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("");
+  var companyField = "";
+  if (companies && companies.length > 0) {
+    var companyOptions = companies.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (filters.company === c ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("");
+    companyField = '<div class="field" style="margin:0;"><label for="' + idPrefix + '-company">الشركة</label><select id="' + idPrefix + '-company" onchange="' + idPrefix + 'FilterChanged()"><option value="">كل الشركات</option>' + companyOptions + '</select></div>';
+  }
 
   return '<div class="filter-grid">' +
     '<div class="field" style="margin:0;"><label for="' + idPrefix + '-query">بحث بالاسم أو رقم الطلب</label><input id="' + idPrefix + '-query" value="' + escapeHtml(filters.query || "") + '" placeholder="ابحث..." oninput="' + idPrefix + 'FilterChanged()" /></div>' +
+    companyField +
     '<div class="field" style="margin:0;"><label for="' + idPrefix + '-city">المدينة</label><select id="' + idPrefix + '-city" onchange="' + idPrefix + 'FilterChanged()"><option value="">كل المدن</option>' + cityOptions + '</select></div>' +
     '<div class="field" style="margin:0;"><label for="' + idPrefix + '-type">نوع الإجازة</label><select id="' + idPrefix + '-type" onchange="' + idPrefix + 'FilterChanged()"><option value="all">كل الأنواع</option>' + typeOptions + '</select></div>' +
     '<div class="field" style="margin:0;"><label for="' + idPrefix + '-status">الحالة</label><select id="' + idPrefix + '-status" onchange="' + idPrefix + 'FilterChanged()"><option value="all">كل الحالات</option>' + statusOptions + '</select></div>' +
+    '<div class="field" style="margin:0;"><label for="' + idPrefix + '-month">الشهر</label><input id="' + idPrefix + '-month" type="month" value="' + escapeHtml(filters.month || "") + '" onchange="' + idPrefix + 'FilterChanged()" /></div>' +
   '</div>';
 }
 
 function readFilterBar(idPrefix) {
   return {
     query: el(idPrefix + "-query") ? el(idPrefix + "-query").value : "",
+    company: el(idPrefix + "-company") ? el(idPrefix + "-company").value : "",
     city: el(idPrefix + "-city") ? el(idPrefix + "-city").value : "",
     leaveType: el(idPrefix + "-type") ? el(idPrefix + "-type").value : "all",
-    status: el(idPrefix + "-status") ? el(idPrefix + "-status").value : "all"
+    status: el(idPrefix + "-status") ? el(idPrefix + "-status").value : "all",
+    month: el(idPrefix + "-month") ? el(idPrefix + "-month").value : ""
   };
 }
 
@@ -1247,9 +1304,11 @@ function applyClientFilters(items, filters) {
       var matches = item.employeeName.toLowerCase().indexOf(q) !== -1 || item.nationalId.indexOf(q) !== -1 || item.requestId.toLowerCase().indexOf(q) !== -1;
       if (!matches) return false;
     }
+    if (filters.company && item.company && item.company !== filters.company) return false;
     if (filters.city && item.city && item.city !== filters.city) return false;
     if (filters.leaveType !== "all" && item.leaveType !== filters.leaveType) return false;
     if (filters.status !== "all" && item.status !== filters.status) return false;
+    if (filters.month && item.startDate && item.startDate.indexOf(filters.month) !== 0) return false;
     return true;
   });
 }
@@ -1891,6 +1950,7 @@ function renderMyRequestsTable(requests) {
   if (requests.length === 0) return renderEmptyState("لا توجد طلبات إجازة بعد", "استخدم زر «طلب إجازة» لإنشاء طلبك الأول.");
   var rows = requests.map(function (r) {
     var comments = "";
+    if (r.supervisorComment) comments += "<p>المشرف: " + escapeHtml(r.supervisorComment) + "</p>";
     if (r.pmComment) comments += "<p>مدير المشروع: " + escapeHtml(r.pmComment) + "</p>";
     if (r.cmComment) comments += "<p>مدير العقد / المدير العام: " + escapeHtml(r.cmComment) + "</p>";
     if (!comments) comments = "—";
@@ -1921,13 +1981,13 @@ var ManagerDashboard = {
   requests: [],
   isLoading: true,
   error: null,
-  filters: { query: "", city: "", leaveType: "all", status: "all" },
+  filters: { query: "", company: "", city: "", leaveType: "all", status: "all", month: "" },
   busyRequestId: null,
 
   mount: function (target) {
     ManagerDashboard.target = target;
     ManagerDashboard.tab = "queue";
-    ManagerDashboard.filters = { query: "", city: "", leaveType: "all", status: "all" };
+    ManagerDashboard.filters = { query: "", company: "", city: "", leaveType: "all", status: "all", month: "" };
     ManagerDashboard.load();
   },
 
@@ -1969,11 +2029,12 @@ var ManagerDashboard = {
 
   renderInto: function () {
     if (!App.employee) return; // تجاهل استجابة وصلت متأخرة بعد تسجيل الخروج أو التنقل بعيداً
+    var canSelfSubmit = SELF_SUBMIT_ROLES.indexOf(App.employee.role) !== -1;
     var tabsHtml = '<div class="flex-between" style="margin-bottom:18px;">' +
       '<h1 class="page-title">لوحة الاعتماد</h1>' +
       '<div class="segmented">' +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "queue" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'queue\')">الطلبات</button>' +
-        '<button class="tab-btn ' + (ManagerDashboard.tab === "myRequests" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'myRequests\')">طلباتي</button>' +
+        (canSelfSubmit ? '<button class="tab-btn ' + (ManagerDashboard.tab === "myRequests" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'myRequests\')">طلباتي</button>' : '') +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "permissions" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'permissions\')">الاستئذانات</button>' +
         '<button class="tab-btn ' + (ManagerDashboard.tab === "archive" ? "active" : "") + '" onclick="ManagerDashboard.setTab(\'archive\')">الأرشيف</button>' +
       '</div></div>' +
@@ -1981,7 +2042,7 @@ var ManagerDashboard = {
     ManagerDashboard.target.innerHTML = tabsHtml;
     var content = el("mgr-tab-content");
 
-    if (ManagerDashboard.tab === "myRequests") {
+    if (ManagerDashboard.tab === "myRequests" && canSelfSubmit) {
       EmployeeDashboard.mount(content);
       return;
     }
@@ -2029,15 +2090,17 @@ function mgrQFilterChanged() { ManagerDashboard.filters = readFilterBar("mgrQ");
 var PermissionsReportTab = {
   instances: {},
 
-  mount: function (target, idPrefix) {
+  mount: function (target, idPrefix, companies) {
     PermissionsReportTab.instances[idPrefix] = {
-      target: target, filters: { query: "", dateFrom: "", dateTo: "" }, items: [], loading: true, error: null
+      target: target, companies: companies || [], filters: { query: "", company: "", month: "", dateFrom: "", dateTo: "" }, items: [], loading: true, error: null
     };
     PermissionsReportTab.load(idPrefix);
     window[idPrefix + "PermFilterChanged"] = function () {
       var inst = PermissionsReportTab.instances[idPrefix];
       inst.filters = {
         query: el(idPrefix + "-perm-query") ? el(idPrefix + "-perm-query").value : "",
+        company: el(idPrefix + "-perm-company") ? el(idPrefix + "-perm-company").value : "",
+        month: el(idPrefix + "-perm-month") ? el(idPrefix + "-perm-month").value : "",
         dateFrom: el(idPrefix + "-perm-from") ? el(idPrefix + "-perm-from").value : "",
         dateTo: el(idPrefix + "-perm-to") ? el(idPrefix + "-perm-to").value : ""
       };
@@ -2051,6 +2114,8 @@ var PermissionsReportTab = {
     PermissionsReportTab.renderInto(idPrefix);
     api.getAllPermissionsHistory({
       query: inst.filters.query || undefined,
+      company: inst.filters.company || undefined,
+      month: inst.filters.month || undefined,
       dateFrom: inst.filters.dateFrom || undefined,
       dateTo: inst.filters.dateTo || undefined
     }).then(function (data) {
@@ -2063,9 +2128,18 @@ var PermissionsReportTab = {
 
   renderInto: function (idPrefix) {
     var inst = PermissionsReportTab.instances[idPrefix];
-    var filterBar = '<div class="filter-grid" style="grid-template-columns:repeat(3,1fr);">' +
+    var companyField = "";
+    if (inst.companies && inst.companies.length > 0) {
+      var companyOptions = inst.companies.map(function (c) { return '<option value="' + escapeHtml(c) + '"' + (inst.filters.company === c ? " selected" : "") + '>' + escapeHtml(c) + '</option>'; }).join("");
+      companyField = '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-company">الشركة</label>' +
+        '<select id="' + idPrefix + '-perm-company" onchange="' + idPrefix + 'PermFilterChanged()"><option value="">كل الشركات</option>' + companyOptions + '</select></div>';
+    }
+    var filterBar = '<div class="filter-grid" style="grid-template-columns:repeat(' + (companyField ? 5 : 4) + ',1fr);">' +
       '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-query">بحث بالاسم أو رقم الهوية</label>' +
         '<input id="' + idPrefix + '-perm-query" value="' + escapeHtml(inst.filters.query) + '" placeholder="ابحث..." oninput="' + idPrefix + 'PermFilterChanged()" /></div>' +
+      companyField +
+      '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-month">الشهر</label>' +
+        '<input id="' + idPrefix + '-perm-month" type="month" value="' + escapeHtml(inst.filters.month) + '" onchange="' + idPrefix + 'PermFilterChanged()" /></div>' +
       '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-from">من تاريخ</label>' +
         '<input id="' + idPrefix + '-perm-from" type="date" value="' + escapeHtml(inst.filters.dateFrom) + '" onchange="' + idPrefix + 'PermFilterChanged()" /></div>' +
       '<div class="field" style="margin:0;"><label for="' + idPrefix + '-perm-to">إلى تاريخ</label>' +
@@ -2108,12 +2182,12 @@ var PermissionsReportTab = {
 };
 
 var ArchiveTab = {
-  instances: {}, // idPrefix -> { target, cities, filters, page, result, loading, error, enableExport, isExporting }
+  instances: {}, // idPrefix -> { target, cities, companies, filters, page, result, loading, error, enableExport, isExporting }
 
-  mount: function (target, idPrefix, cities, enableExport) {
+  mount: function (target, idPrefix, cities, enableExport, companies) {
     ArchiveTab.instances[idPrefix] = {
-      target: target, cities: cities, enableExport: !!enableExport,
-      filters: { query: "", city: "", leaveType: "all", status: "all" },
+      target: target, cities: cities, companies: companies || [], enableExport: !!enableExport,
+      filters: { query: "", company: "", city: "", leaveType: "all", status: "all", month: "" },
       page: 1, result: null, loading: true, error: null, isExporting: false
     };
     ArchiveTab.load(idPrefix);
@@ -2136,9 +2210,11 @@ var ArchiveTab = {
     ArchiveTab.renderInto(idPrefix);
     api.getAllRequestsHistory({
       query: inst.filters.query || undefined,
+      company: inst.filters.company || undefined,
       city: inst.filters.city || undefined,
       leaveType: inst.filters.leaveType === "all" ? undefined : inst.filters.leaveType,
       status: inst.filters.status === "all" ? undefined : inst.filters.status,
+      month: inst.filters.month || undefined,
       page: inst.page, pageSize: 15
     }).then(function (data) {
       inst.result = data; inst.loading = false; ArchiveTab.renderInto(idPrefix);
@@ -2155,9 +2231,10 @@ var ArchiveTab = {
     inst.isExporting = true;
     ArchiveTab.renderInto(idPrefix);
     api.getAllRequestsHistory({
-      query: inst.filters.query || undefined, city: inst.filters.city || undefined,
+      query: inst.filters.query || undefined, company: inst.filters.company || undefined, city: inst.filters.city || undefined,
       leaveType: inst.filters.leaveType === "all" ? undefined : inst.filters.leaveType,
       status: inst.filters.status === "all" ? undefined : inst.filters.status,
+      month: inst.filters.month || undefined,
       page: 1, pageSize: 2000
     }).then(function (data) {
       inst.isExporting = false;
@@ -2183,7 +2260,7 @@ var ArchiveTab = {
     else {
       body = renderRequestsTable(inst.result.items, {}) + renderPagination(idPrefix, inst.result.page, inst.result.pageSize, inst.result.total);
     }
-    inst.target.innerHTML = renderFilterBar(idPrefix, inst.filters, inst.cities) + exportBtn + body;
+    inst.target.innerHTML = renderFilterBar(idPrefix, inst.filters, inst.cities, inst.companies) + exportBtn + body;
   }
 };
 
@@ -2260,12 +2337,12 @@ var GMDashboard = {
   requests: [],
   isLoading: true,
   error: null,
-  filters: { query: "", city: "", leaveType: "all", status: "all" },
+  filters: { query: "", company: "", city: "", leaveType: "all", status: "all", month: "" },
 
   mount: function (target) {
     GMDashboard.target = target;
     GMDashboard.tab = "queue";
-    GMDashboard.filters = { query: "", city: "", leaveType: "all", status: "all" };
+    GMDashboard.filters = { query: "", company: "", city: "", leaveType: "all", status: "all", month: "" };
     GMDashboard.load();
   },
 
@@ -2286,6 +2363,11 @@ var GMDashboard = {
   cities: function () {
     var set = {};
     GMDashboard.requests.forEach(function (r) { if (r.city) set[r.city] = true; });
+    return Object.keys(set);
+  },
+  companies: function () {
+    var set = {};
+    GMDashboard.requests.forEach(function (r) { if (r.company) set[r.company] = true; });
     return Object.keys(set);
   },
 
@@ -2310,8 +2392,8 @@ var GMDashboard = {
     GMDashboard.target.innerHTML = tabsHtml;
     var content = el("gm-tab-content");
 
-    if (GMDashboard.tab === "permissions") { PermissionsReportTab.mount(content, "gmPerm"); return; }
-    if (GMDashboard.tab === "archive") { ArchiveTab.mount(content, "gmArch", GMDashboard.cities()); return; }
+    if (GMDashboard.tab === "permissions") { PermissionsReportTab.mount(content, "gmPerm", GMDashboard.companies()); return; }
+    if (GMDashboard.tab === "archive") { ArchiveTab.mount(content, "gmArch", GMDashboard.cities(), false, GMDashboard.companies()); return; }
 
     var queue = GMDashboard.gmQueue();
     var filtered = applyClientFilters(queue, GMDashboard.filters);
@@ -2394,7 +2476,10 @@ var COPage = {
     COPage.target.innerHTML = tabsHtml;
     var content = el("co-tab-content");
 
-    if (COPage.tab === "permissions") { PermissionsReportTab.mount(content, "coPerm"); return; }
+    var cities = COPage.requests ? Array.from(new Set(COPage.requests.map(function (r) { return r.city; }).filter(Boolean))) : [];
+    var companies = COPage.requests ? Array.from(new Set(COPage.requests.map(function (r) { return r.company; }).filter(Boolean))) : [];
+
+    if (COPage.tab === "permissions") { PermissionsReportTab.mount(content, "coPerm", companies); return; }
 
     var summary = "";
     if (COPage.isLoading) summary = renderCenterLoading("جارٍ تحميل الملخص...");
@@ -2408,10 +2493,9 @@ var COPage = {
         renderStatCard("مرفوضة", r.filter(function (x) { return x.status === "rejected"; }).length, "blue") +
       '</div>';
     }
-    var cities = COPage.requests ? Array.from(new Set(COPage.requests.map(function (r) { return r.city; }).filter(Boolean))) : [];
 
     content.innerHTML = summary + '<div id="co-archive-host"></div>';
-    ArchiveTab.mount(el("co-archive-host"), "coArch", cities, true);
+    ArchiveTab.mount(el("co-archive-host"), "coArch", cities, true, companies);
   }
 };
 
