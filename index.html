@@ -424,65 +424,30 @@ function calculateLeave(params) {
 }
 
 // ================================================================
-// مسار الاعتماد الإلزامي
+// مسار الاعتماد — معتمدان محددان بالاسم لكل موظف (وليس بالدور)
 //
-// موظف عادي → المشرف → مدير المشروع → مدير العقد (نهائي)
-// المشرف → مدير المشروع → مدير العقد (نهائي)                    [يتجاوز مرحلته]
-// مدير المشروع → مدير العقد (نهائي)                              [يتجاوز المشرف ومرحلته]
-// إجازة استثنائية بدون أجر (أي مقدّم): مباشرة إلى المدير العام (نهائي)
-// مدير العقد والمدير العام لا يقدّمان طلبات إجازة أصلاً
+// كل موظف له "معتمد أول" (اختياري) و"معتمد نهائي" (إلزامي) محدَّدان صراحة
+// برقم الهوية في سجله. الصلاحية تُفرض بمطابقة هوية صاحب الجلسة بهذين
+// المعتمدين تحديداً — لا علاقة لدوره بذلك. إجازة استثنائية بدون أجر تتجاوز
+// كل هذا وتذهب مباشرة للمدير العام. مدير العقد والمدير العام لا يقدّمان
+// طلبات إجازة أصلاً.
 // ================================================================
 
 var SELF_SUBMIT_ROLES = ["employee", "supervisor", "pm"];
 
-function determineInitialStage(requesterRole, leaveType) {
-  if (EXCEPTIONAL_GM_DIRECT_TYPES.indexOf(leaveType) !== -1) return "gm";
-  if (requesterRole === "employee") return "supervisor";
-  if (requesterRole === "supervisor") return "pm";
-  if (requesterRole === "pm") return "cm";
-  return "gm"; // احتياط دفاعي
+/** هل يملك actor صلاحية التصرف بهذا الطلب في حالته الحالية؟ (مطابقة بالهوية) */
+function canActOnRequest(actorNationalId, request) {
+  if (request.status === "pending_stage1") {
+    return String(actorNationalId).trim() === String(request.stage1ApproverNationalId || "").trim();
+  }
+  if (request.status === "pending_stage2") {
+    return String(actorNationalId).trim() === String(request.stage2ApproverNationalId || "").trim();
+  }
+  return false;
 }
 
-function determineNextStage(currentStage) {
-  if (currentStage === "supervisor") return "pm";
-  if (currentStage === "pm") return "cm";
-  if (currentStage === "cm") return "done";
-  if (currentStage === "gm") return "done";
-  return "done";
-}
-
-function canRoleActOnStage(role, stage) {
-  if (stage === "done") return false;
-  if (role === "co" || role === "employee") return false;
-  return role === stage;
-}
-
-function stageToStatus(stage) {
-  if (stage === "supervisor") return "pending_supervisor";
-  if (stage === "pm") return "pending_pm";
-  if (stage === "cm") return "pending_cm";
-  if (stage === "gm") return "pending_gm";
-  return "approved";
-}
-
-function statusToStage(status) {
-  if (status === "pending_supervisor") return "supervisor";
-  if (status === "pending_pm") return "pm";
-  if (status === "pending_cm") return "cm";
-  if (status === "pending_gm") return "gm";
-  return "done";
-}
-
-var STAGE_LABELS = {
-  supervisor: "بانتظار اعتماد المشرف",
-  pm: "بانتظار اعتماد مدير المشروع",
-  cm: "بانتظار الاعتماد النهائي من مدير العقد",
-  gm: "بانتظار اعتماد المدير العام",
-  done: "مكتمل"
-};
-
-function isFinalApprovalStage(stage) {
-  return stage === "cm" || stage === "gm";
+function isFinalApprovalStatus(status) {
+  return status === "pending_stage2";
 }
 
 // ================================================================
@@ -490,23 +455,31 @@ function isFinalApprovalStage(stage) {
 // ================================================================
 
 var STATUS_LABELS = {
-  pending_supervisor: "قيد المراجعة (المشرف)",
-  pending_pm: "قيد المراجعة (مدير المشروع)",
-  pending_cm: "قيد المراجعة (مدير العقد)",
-  pending_gm: "قيد المراجعة (المدير العام)",
+  pending_stage1: "قيد المراجعة (المرحلة الأولى)",
+  pending_stage2: "قيد المراجعة (الاعتماد النهائي)",
   approved: "مقبول",
   rejected: "مرفوض",
   cancelled: "ملغي"
 };
 
 var STATUS_BADGE_CLASS = {
-  pending_supervisor: "pending", pending_pm: "pending", pending_cm: "pending", pending_gm: "pending",
+  pending_stage1: "pending", pending_stage2: "pending",
   approved: "approved", rejected: "rejected", cancelled: "cancelled"
 };
 
-var ALL_STATUSES = ["pending_supervisor", "pending_pm", "pending_cm", "pending_gm", "approved", "rejected", "cancelled"];
+var ALL_STATUSES = ["pending_stage1", "pending_stage2", "approved", "rejected", "cancelled"];
 
 var ROLE_LABELS = { employee: "موظف", supervisor: "مشرف", pm: "مدير مشروع", cm: "مدير عقد", co: "مسؤول عقود", gm: "المدير العام" };
+
+/** نص عرض لحالة الانتظار يذكر اسم الشخص الفعلي المطلوب منه الاعتماد، إن توفر */
+function pendingStatusLabel(request) {
+  if (request.status !== "pending_stage1" && request.status !== "pending_stage2") return "";
+  if (request.currentApproverName) {
+    var roleLabel = ROLE_LABELS[request.currentApproverRole] || "";
+    return "بانتظار اعتماد " + request.currentApproverName + (roleLabel ? " (" + roleLabel + ")" : "");
+  }
+  return STATUS_LABELS[request.status];
+}
 
 // ================================================================
 // بيانات تجريبية (Mock) — تُستخدم فقط عند عدم ضبط رابط Apps Script حقيقي
@@ -514,17 +487,21 @@ var ROLE_LABELS = { employee: "موظف", supervisor: "مشرف", pm: "مدير 
 
 var MOCK_EMPLOYEES = [
   // ---- الشركة التجريبية ----
-  { nationalId:"1010101010", password:"1234", name:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", jobTitle:"أخصائي عمليات", initialBalance:30, currentBalance:21, email:"salem.harbi@example.com", supervisorEmail:"supervisor1@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"الرياض" },
-  { nationalId:"2020202020", password:"1234", name:"منى القحطاني", company:"الشركة التجريبية", department:"الموارد البشرية", jobTitle:"منسقة موارد بشرية", initialBalance:30, currentBalance:30, email:"mona.q@example.com", supervisorEmail:"supervisor1@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"employee", city:"جدة" },
-  { nationalId:"7070707070", password:"1234", name:"عمر الشهري", company:"الشركة التجريبية", department:"العمليات", jobTitle:"مشرف عمليات", initialBalance:25, currentBalance:25, email:"omar.shahri@example.com", pmEmail:"pm@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"supervisor", city:"الرياض" },
-  { nationalId:"3030303030", password:"1234", name:"خالد الدوسري", company:"الشركة التجريبية", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:24, email:"khaled.dosari@example.com", cmEmail:"cm@example.com", gmEmail:"gm@example.com", role:"pm", city:"الرياض" },
-  { nationalId:"4040404040", password:"1234", name:"فيصل العنزي", company:"الشركة التجريبية", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"faisal.anzi@example.com", gmEmail:"gm@example.com", role:"cm", city:"الرياض" },
+  // سالم: موظف عادي عادي — معتمد أول = عمر (مشرف)، معتمد نهائي = خالد (PM)
+  { nationalId:"1010101010", password:"1234", name:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", jobTitle:"أخصائي عمليات", initialBalance:30, currentBalance:21, email:"salem.harbi@example.com", supervisorEmail:"omar.shahri@example.com", pmEmail:"khaled.dosari@example.com", cmEmail:"faisal.anzi@example.com", gmEmail:"noura.shamri@example.com", role:"employee", city:"الرياض", approver1NationalId:"7070707070", approver2NationalId:"3030303030" },
+  // منى: من "الأشخاص الخاصين" — معتمد أول = خالد (PM)، معتمد نهائي = فيصل (CM) مباشرة
+  { nationalId:"2020202020", password:"1234", name:"منى القحطاني", company:"الشركة التجريبية", department:"الموارد البشرية", jobTitle:"منسقة موارد بشرية", initialBalance:30, currentBalance:30, email:"mona.q@example.com", supervisorEmail:"omar.shahri@example.com", pmEmail:"khaled.dosari@example.com", cmEmail:"faisal.anzi@example.com", gmEmail:"noura.shamri@example.com", role:"employee", city:"جدة", approver1NationalId:"3030303030", approver2NationalId:"4040404040" },
+  // عمر: مشرف — طلبه الخاص بلا معتمد أول، معتمد نهائي = خالد (PM) مباشرة
+  { nationalId:"7070707070", password:"1234", name:"عمر الشهري", company:"الشركة التجريبية", department:"العمليات", jobTitle:"مشرف عمليات", initialBalance:25, currentBalance:25, email:"omar.shahri@example.com", pmEmail:"khaled.dosari@example.com", cmEmail:"faisal.anzi@example.com", gmEmail:"noura.shamri@example.com", role:"supervisor", city:"الرياض", approver1NationalId:"", approver2NationalId:"3030303030" },
+  // خالد: مدير مشروع — طلبه الخاص بلا معتمد أول، معتمد نهائي = فيصل (CM)
+  { nationalId:"3030303030", password:"1234", name:"خالد الدوسري", company:"الشركة التجريبية", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:24, email:"khaled.dosari@example.com", cmEmail:"faisal.anzi@example.com", gmEmail:"noura.shamri@example.com", role:"pm", city:"الرياض", approver1NationalId:"", approver2NationalId:"4040404040" },
+  { nationalId:"4040404040", password:"1234", name:"فيصل العنزي", company:"الشركة التجريبية", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"faisal.anzi@example.com", gmEmail:"noura.shamri@example.com", role:"cm", city:"الرياض" },
   { nationalId:"5050505050", password:"1234", name:"عبدالله المطيري", company:"الشركة التجريبية", department:"الشؤون القانونية والعقود", jobTitle:"مسؤول عقود", initialBalance:30, currentBalance:30, email:"abdullah.mutairi@example.com", role:"co", city:"الرياض" },
   { nationalId:"6060606060", password:"1234", name:"نورة الشمري", company:"الشركة التجريبية", department:"الإدارة التنفيذية", jobTitle:"المدير العام", initialBalance:30, currentBalance:30, email:"noura.shamri@example.com", role:"gm", city:"الرياض" },
   // ---- شركة الرواد (لاختبار عزل الشركتين) ----
-  { nationalId:"8080808080", password:"1234", name:"بندر القرني", company:"شركة الرواد", department:"المبيعات", jobTitle:"أخصائي مبيعات", initialBalance:30, currentBalance:30, email:"bandar.q@example.com", pmEmail:"pm2@example.com", cmEmail:"cm2@example.com", gmEmail:"gm@example.com", role:"employee", city:"الدمام" },
-  { nationalId:"9090909090", password:"1234", name:"سعيد آل مبارك", company:"شركة الرواد", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:30, email:"saeed.mubarak@example.com", cmEmail:"cm2@example.com", gmEmail:"gm@example.com", role:"pm", city:"الدمام" },
-  { nationalId:"1212121212", password:"1234", name:"تركي الزهراني", company:"شركة الرواد", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"turki.zahrani@example.com", gmEmail:"gm@example.com", role:"cm", city:"الدمام" }
+  { nationalId:"8080808080", password:"1234", name:"بندر القرني", company:"شركة الرواد", department:"المبيعات", jobTitle:"أخصائي مبيعات", initialBalance:30, currentBalance:30, email:"bandar.q@example.com", pmEmail:"saeed.mubarak@example.com", cmEmail:"turki.zahrani@example.com", gmEmail:"noura.shamri@example.com", role:"employee", city:"الدمام", approver1NationalId:"", approver2NationalId:"9090909090" },
+  { nationalId:"9090909090", password:"1234", name:"سعيد آل مبارك", company:"شركة الرواد", department:"إدارة المشاريع", jobTitle:"مدير مشروع", initialBalance:30, currentBalance:30, email:"saeed.mubarak@example.com", cmEmail:"turki.zahrani@example.com", gmEmail:"noura.shamri@example.com", role:"pm", city:"الدمام", approver1NationalId:"", approver2NationalId:"1212121212" },
+  { nationalId:"1212121212", password:"1234", name:"تركي الزهراني", company:"شركة الرواد", department:"إدارة العقود", jobTitle:"مدير عقد", initialBalance:30, currentBalance:30, email:"turki.zahrani@example.com", gmEmail:"noura.shamri@example.com", role:"cm", city:"الدمام" }
 ];
 
 var MOCK_HOLIDAYS = [
@@ -535,8 +512,8 @@ var MOCK_HOLIDAYS = [
 ];
 
 var MOCK_REQUESTS = [
-  { requestId:"REQ-0001", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"annual", startDate:"2026-08-02", endDate:"2026-08-06", totalDays:4, substituteName:"منى القحطاني", reason:"إجازة سنوية مجدولة", status:"approved", supervisorComment:"موافق", pmComment:"موافق", cmComment:"معتمد", timestamp:"2026-07-20T09:15:00+03:00", finalApprovalDate:"2026-07-22T11:00:00+03:00" },
-  { requestId:"REQ-0002", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"sick", startDate:"2026-09-10", endDate:"2026-09-11", totalDays:2, substituteName:"-", reason:"وعكة صحية", status:"pending_supervisor", supervisorComment:"", pmComment:"", cmComment:"", timestamp:"2026-09-09T08:00:00+03:00", finalApprovalDate:"" }
+  { requestId:"REQ-0001", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"annual", startDate:"2026-08-02", endDate:"2026-08-06", totalDays:4, substituteName:"منى القحطاني", reason:"إجازة سنوية مجدولة", status:"approved", stage1ApproverNationalId:"7070707070", stage2ApproverNationalId:"3030303030", stage1Comment:"موافق", stage2Comment:"معتمد", pmApproverName:"خالد الدوسري", pmApproverNationalId:"3030303030", timestamp:"2026-07-20T09:15:00+03:00", finalApprovalDate:"2026-07-22T11:00:00+03:00" },
+  { requestId:"REQ-0002", nationalId:"1010101010", employeeName:"سالم الحربي", company:"الشركة التجريبية", department:"العمليات", city:"الرياض", leaveType:"sick", startDate:"2026-09-10", endDate:"2026-09-11", totalDays:2, substituteName:"-", reason:"وعكة صحية", status:"pending_stage1", stage1ApproverNationalId:"7070707070", stage2ApproverNationalId:"3030303030", stage1Comment:"", stage2Comment:"", timestamp:"2026-09-09T08:00:00+03:00", finalApprovalDate:"" }
 ];
 
 // نسخ عميقة قابلة للتعديل أثناء الجلسة (تُهيَّأ عند كل تحميل صفحة من جديد)
@@ -577,6 +554,45 @@ function mockHolidaySet() {
   var set = {};
   mockDb.holidays.forEach(function (h) { set[h.date] = true; });
   return set;
+}
+
+function mockFindSoleGm() {
+  return mockDb.employees.filter(function (e) { return e.role === "gm"; })[0] || null;
+}
+
+/** يحاكي resolveApprovalChain_ بالخادم: يقرأ المعتمدين المحدَّدين بالاسم من سجل الموظف نفسه */
+function mockResolveApprovalChain(employee, leaveType) {
+  if (EXCEPTIONAL_GM_DIRECT_TYPES.indexOf(leaveType) !== -1) {
+    var gm = mockFindSoleGm();
+    if (!gm) throw new ApiClientError("تعذر إيجاد المدير العام لاعتماد هذا النوع من الإجازة.", "CONFIG_ERROR");
+    return { stage1: "", stage2: gm.nationalId };
+  }
+  var approver1 = String(employee.approver1NationalId || "").trim();
+  var approver2 = String(employee.approver2NationalId || "").trim();
+  if (!approver2) {
+    throw new ApiClientError("لم يُحدَّد معتمد نهائي لهذا الموظف بعد. الرجاء إعداد ذلك في بيانات الموظف أولاً.", "CONFIG_ERROR");
+  }
+  return { stage1: approver1, stage2: approver2 };
+}
+
+function mockCanActOnRequest(actor, request) {
+  if (request.status === "pending_stage1") return String(actor.nationalId) === String(request.stage1ApproverNationalId || "");
+  if (request.status === "pending_stage2") return String(actor.nationalId) === String(request.stage2ApproverNationalId || "");
+  return false;
+}
+
+/** يحاكي attachCurrentApproverInfo_: يُلحق اسم/دور المعتمد الحالي الفعلي بالاسم */
+function mockAttachApproverInfo(requests) {
+  var byId = {};
+  mockDb.employees.forEach(function (e) { byId[e.nationalId] = e; });
+  return requests.map(function (r) {
+    var approverId = r.status === "pending_stage1" ? r.stage1ApproverNationalId
+      : r.status === "pending_stage2" ? r.stage2ApproverNationalId : "";
+    var approver = approverId ? byId[approverId] : null;
+    r.currentApproverName = approver ? approver.name : "";
+    r.currentApproverRole = approver ? approver.role : "";
+    return r;
+  });
 }
 
 var mockApi = {
@@ -629,14 +645,16 @@ var mockApi = {
       throw new ApiClientError("الرصيد الحالي لا يكفي لهذه المدة.", "INSUFFICIENT_BALANCE");
     }
 
-    var stage = determineInitialStage(actor.role, payload.leaveType);
+    var chain = mockResolveApprovalChain(actor, payload.leaveType);
     var record = {
       requestId: "REQ-" + String(mockDb.seq++).padStart(4, "0"),
       nationalId: actor.nationalId, employeeName: actor.name, company: actor.company,
       department: actor.department, city: actor.city, leaveType: payload.leaveType,
       startDate: calc.startDate, endDate: calc.endDate, totalDays: calc.totalDays,
       substituteName: payload.substituteName, substituteNationalId: payload.substituteNationalId || "", reason: payload.reason,
-      status: stageToStatus(stage), supervisorComment: "", pmComment: "", cmComment: "",
+      status: chain.stage1 ? "pending_stage1" : "pending_stage2",
+      stage1ApproverNationalId: chain.stage1, stage2ApproverNationalId: chain.stage2,
+      stage1Comment: "", stage2Comment: "",
       timestamp: nowInRiyadhISO(), finalApprovalDate: ""
     };
     mockDb.requests.unshift(record);
@@ -645,16 +663,16 @@ var mockApi = {
 
   getMyRequests: function (token) {
     var actor = mockRequireSession(token);
-    return mockDelay(mockDb.requests.filter(function (r) { return r.nationalId === actor.nationalId; }));
+    return mockDelay(mockAttachApproverInfo(mockDb.requests.filter(function (r) { return r.nationalId === actor.nationalId; })));
   },
 
   getRequests: function (token) {
     var actor = mockRequireSession(token);
     if (actor.role === "employee") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
-    if (actor.role === "co" || actor.role === "gm") return mockDelay(mockDb.requests);
-    return mockDelay(mockDb.requests.filter(function (r) {
-      return statusToStage(r.status) === actor.role && r.company === actor.company;
-    }));
+    if (actor.role === "co") return mockDelay(mockAttachApproverInfo(mockDb.requests));
+    return mockDelay(mockAttachApproverInfo(mockDb.requests.filter(function (r) {
+      return mockCanActOnRequest(actor, r);
+    })));
   },
 
   getEmployeeHistory: function (token, empNationalId) {
@@ -697,30 +715,30 @@ var mockApi = {
   updateStatus: function (token, payload) {
     var actor = mockRequireSession(token);
     if (actor.role === "co") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
+    if (actor.role === "employee") throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء.", "FORBIDDEN");
     var idx = -1;
     for (var i = 0; i < mockDb.requests.length; i++) { if (mockDb.requests[i].requestId === payload.requestId) { idx = i; break; } }
     if (idx === -1) throw new ApiClientError("الطلب غير موجود.", "NOT_FOUND");
     var req = mockDb.requests[idx];
 
-    if (req.status === "approved" || req.status === "rejected" || req.status === "cancelled") {
+    if (req.status !== "pending_stage1" && req.status !== "pending_stage2") {
       throw new ApiClientError("لا يمكن تعديل طلب تم البت فيه مسبقاً.", "ALREADY_PROCESSED");
     }
-    var currentStage = statusToStage(req.status);
-    if (!canRoleActOnStage(actor.role, currentStage)) {
+    if (!mockCanActOnRequest(actor, req)) {
       throw new ApiClientError("لا تملك صلاحية تنفيذ هذا الإجراء على هذا الطلب في مرحلته الحالية.", "FORBIDDEN");
     }
+
+    var previousStatus = req.status;
+    var commentField = previousStatus === "pending_stage1" ? "stage1Comment" : "stage2Comment";
 
     if (payload.status === "rejected") {
       if (!payload.comment || !payload.comment.trim()) throw new ApiClientError("التعليق إلزامي عند الرفض.", "VALIDATION_ERROR");
       req.status = "rejected";
-      if (actor.role === "supervisor") req.supervisorComment = payload.comment;
-      else if (actor.role === "pm") req.pmComment = payload.comment;
-      else req.cmComment = payload.comment;
+      req[commentField] = payload.comment;
       return mockDelay(req, 500);
     }
 
-    var nextStage = determineNextStage(currentStage);
-    var willFinalize = isFinalApprovalStage(currentStage);
+    var willFinalize = previousStatus === "pending_stage2";
     if (willFinalize) {
       var policy = LEAVE_POLICY[req.leaveType];
       var empIdx = -1;
@@ -731,11 +749,15 @@ var mockApi = {
         emp.currentBalance = (emp.currentBalance || 0) - req.totalDays;
       }
     }
-    req.status = stageToStatus(nextStage);
-    if (actor.role === "supervisor") req.supervisorComment = payload.comment || req.supervisorComment;
-    else if (actor.role === "pm") req.pmComment = payload.comment || req.pmComment;
-    else req.cmComment = payload.comment || req.cmComment;
-    if (willFinalize) req.finalApprovalDate = nowInRiyadhISO();
+    req[commentField] = payload.comment || req[commentField];
+    req.status = willFinalize ? "approved" : "pending_stage2";
+    if (actor.role === "pm") { req.pmApproverName = actor.name; req.pmApproverNationalId = actor.nationalId; }
+    if (willFinalize) {
+      req.finalApprovalDate = nowInRiyadhISO();
+      req.finalApproverName = actor.name;
+      req.finalApproverRole = actor.role;
+      req.finalApproverNationalId = actor.nationalId;
+    }
     return mockDelay(req, 500);
   },
 
@@ -1235,7 +1257,7 @@ function renderRequestsTable(requests, opts) {
   var rows = requests.map(function (r) {
     var allowed = canActFn ? window[canActFn](r) : false;
     var stageNote = (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled")
-      ? '<div class="muted">' + STAGE_LABELS[statusToStage(r.status)] + '</div>' : "";
+      ? '<div class="muted">' + escapeHtml(pendingStatusLabel(r)) + '</div>' : "";
     var actionsCell = "";
     if (showActions) {
       actionsCell = '<td>' + (allowed
@@ -1950,12 +1972,11 @@ function renderMyRequestsTable(requests) {
   if (requests.length === 0) return renderEmptyState("لا توجد طلبات إجازة بعد", "استخدم زر «طلب إجازة» لإنشاء طلبك الأول.");
   var rows = requests.map(function (r) {
     var comments = "";
-    if (r.supervisorComment) comments += "<p>المشرف: " + escapeHtml(r.supervisorComment) + "</p>";
-    if (r.pmComment) comments += "<p>مدير المشروع: " + escapeHtml(r.pmComment) + "</p>";
-    if (r.cmComment) comments += "<p>مدير العقد / المدير العام: " + escapeHtml(r.cmComment) + "</p>";
+    if (r.stage1Comment) comments += "<p>تعليق المرحلة الأولى: " + escapeHtml(r.stage1Comment) + "</p>";
+    if (r.stage2Comment) comments += "<p>تعليق الاعتماد النهائي: " + escapeHtml(r.stage2Comment) + "</p>";
     if (!comments) comments = "—";
     var stageNote = (r.status !== "approved" && r.status !== "rejected" && r.status !== "cancelled")
-      ? '<div class="muted">' + STAGE_LABELS[statusToStage(r.status)] + '</div>' : "";
+      ? '<div class="muted">' + escapeHtml(pendingStatusLabel(r)) + '</div>' : "";
     var reportCell = r.status === "approved"
       ? '<button class="btn btn-secondary btn-sm" onclick=\'downloadCertificate(' + JSON.stringify(r.requestId) + ', this)\'>تحميل PDF</button>'
       : '<span class="muted">—</span>';
@@ -2016,7 +2037,7 @@ var ManagerDashboard = {
     return Object.keys(set);
   },
 
-  canAct: function (r) { return canRoleActOnStage(App.employee.role, statusToStage(r.status)); },
+  canAct: function (r) { return canActOnRequest(App.employee.nationalId, r); },
 
   approve: function (requestId) {
     var r = ManagerDashboard.requests.filter(function (x) { return x.requestId === requestId; })[0];
@@ -2307,8 +2328,8 @@ function downloadRequestsCsv(requests) {
     ["requestId","رقم الطلب"], ["nationalId","رقم الهوية"], ["employeeName","اسم الموظف"],
     ["company","الشركة"], ["department","القسم"], ["city","المدينة"],
     ["leaveTypeLabel","نوع الإجازة"], ["startDate","تاريخ البداية"], ["endDate","تاريخ النهاية"],
-    ["totalDays","عدد الأيام"], ["statusLabel","الحالة"], ["pmComment","تعليق مدير المشروع"],
-    ["cmComment","تعليق مدير العقد / المدير العام"], ["timestamp","تاريخ الطلب"], ["finalApprovalDate","تاريخ الاعتماد النهائي"]
+    ["totalDays","عدد الأيام"], ["statusLabel","الحالة"], ["stage1Comment","تعليق المرحلة الأولى"],
+    ["stage2Comment","تعليق الاعتماد النهائي"], ["timestamp","تاريخ الطلب"], ["finalApprovalDate","تاريخ الاعتماد النهائي"]
   ];
   function esc(v) {
     var s = v === undefined || v === null ? "" : String(v);
@@ -2372,10 +2393,11 @@ var GMDashboard = {
   },
 
   gmQueue: function () {
-    return GMDashboard.requests.filter(function (r) { return statusToStage(r.status) === "gm"; });
+    // getRequests_ بالخادم أصلاً يُرجع فقط الطلبات التي GM معتمدها الحالي بالاسم
+    return GMDashboard.requests;
   },
 
-  canAct: function (r) { return canRoleActOnStage("gm", statusToStage(r.status)); },
+  canAct: function (r) { return canActOnRequest(App.employee.nationalId, r); },
   approve: function (id) { var r = GMDashboard.requests.filter(function (x) { return x.requestId === id; })[0]; if (r) ApprovalModal.open(r, "approved", "GMDashboard.reload"); },
   reject: function (id) { var r = GMDashboard.requests.filter(function (x) { return x.requestId === id; })[0]; if (r) ApprovalModal.open(r, "rejected", "GMDashboard.reload"); },
 
